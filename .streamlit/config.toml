@@ -1,0 +1,10 @@
+[theme]
+# ADGM / AccessRP inspired palette
+primaryColor = "#0F2D3D"
+backgroundColor = "#FAFAF7"
+secondaryBackgroundColor = "#F1ECE2"
+textColor = "#1A1A1A"
+font = "serif"
+
+[server]
+headless = true
