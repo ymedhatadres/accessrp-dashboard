@@ -82,6 +82,18 @@ def _download_parquet() -> None:
 
 @st.cache_data(show_spinner="Loading tickets...")
 def load_tickets() -> pd.DataFrame:
+    """Load the parquet and return only real complaints.
+
+    Noise rows (auto-replies, delivery failures, the 'Ads Test Tickets and
+    Auto-Emails' service) are dropped at load time. Themes are pre-attached
+    so individual tabs don't need to reclassify.
+    """
     if not PARQUET_PATH.exists():
         _download_parquet()
-    return pd.read_parquet(PARQUET_PATH)
+    df = pd.read_parquet(PARQUET_PATH)
+
+    # Local import to avoid circular dependency at module-import time.
+    from .themes import classify
+    df = classify(df)
+    df = df.loc[~df["is_noise"]].reset_index(drop=True)
+    return df

@@ -24,29 +24,26 @@ def render(df: pd.DataFrame) -> None:
         return
 
     classified = _classify_cached(df)
-    n_total = len(classified)
-    n_real = int((~classified["is_noise"]).sum())
-    n_noise = int(classified["is_noise"].sum())
-
-    c1, c2, c3, c4 = st.columns(4)
-    c1.metric("Total tickets in view", f"{n_total:,}")
-    c2.metric("Real complaints", f"{n_real:,}",
-              delta=f"{n_real / n_total * 100:.1f}% of total" if n_total else None)
-    c3.metric("Automation noise", f"{n_noise:,}",
-              delta=f"{n_noise / n_total * 100:.1f}%" if n_total else None,
-              delta_color="inverse")
-    avg_s = classified.loc[~classified["is_noise"], "sentiment_score"].mean()
-    c4.metric("Avg sentiment (complaints)",
-              f"{avg_s:.1f}" if pd.notna(avg_s) else "—",
-              help="Freshdesk score 0–100; higher = more positive")
-
-    st.caption(
-        "Noise = tickets in the 'Ads Test Tickets and Auto-Emails' service or "
-        "with auto-generated subjects (delivery failures, submission confirmations, "
-        "appointment automation). Everything else is treated as a real complaint."
+    n_real = len(classified)
+    themed = int((classified["theme_primary"] != "Other / unclassified").sum())
+    avg_s = classified["sentiment_score"].mean()
+    neg_pct = (
+        (classified["sentiment_bucket"] == "Negative").mean() * 100
+        if "sentiment_bucket" in classified else 0
     )
 
-    real = classified[~classified["is_noise"]]
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("Real complaints", f"{n_real:,}")
+    c2.metric("Themed complaints", f"{themed:,}",
+              delta=f"{themed / n_real * 100:.1f}% of real" if n_real else None,
+              help="Tickets that matched at least one known theme.")
+    c3.metric("Avg sentiment", f"{avg_s:.1f}" if pd.notna(avg_s) else "—",
+              help="Freshdesk score 0–100; higher = more positive")
+    c4.metric("Negative tickets", f"{neg_pct:.1f}%",
+              help="Share of real complaints with sentiment_score < 20.",
+              delta_color="inverse")
+
+    real = classified
     if real.empty:
         st.warning("No real complaints in the current filter.")
         return
