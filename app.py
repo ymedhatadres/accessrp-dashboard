@@ -7,7 +7,7 @@ import streamlit as st
 from lib.auth_ui import gate, sidebar_account_panel
 from lib.data import load_tickets
 from lib.filters import render_sidebar_filters
-from lib.tabs import complaints, overview, qualitative, root_cause, sentiment, volume
+from lib.tabs import complaints, overview, qualitative, report, root_cause, sentiment, volume
 from lib.theme import CUSTOM_CSS, HEADER_HTML, install as install_theme
 
 st.set_page_config(
@@ -28,13 +28,15 @@ df = load_tickets()
 filtered = render_sidebar_filters(df)
 sidebar_account_panel(user_email)
 
-tab_overview, tab_complaints, tab_qual, tab_volume, tab_root, tab_sent = st.tabs(
-    ["Overview", "Complaints", "Qualitative", "Volume & trends",
-     "Root cause", "Sentiment"]
+tab_overview, tab_report, tab_complaints, tab_qual, tab_volume, tab_root, tab_sent = st.tabs(
+    ["Overview", "Report", "Complaints", "Qualitative",
+     "Volume & trends", "Root cause", "Sentiment"]
 )
 
 with tab_overview:
     overview.render(filtered)
+with tab_report:
+    report.render(filtered)
 with tab_complaints:
     complaints.render(filtered)
 with tab_qual:
