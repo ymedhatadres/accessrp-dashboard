@@ -1,0 +1,808 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>AccessRP — User Feedback Insights (April 2026)</title>
+  <style>
+:root {
+  --navy: #0F2D3D;
+  --gold: #B89968;
+  --cream: #FAF7F0;
+  --ink: #1A1A1A;
+  --muted: #6B6B6B;
+  --border: #E5E0D2;
+  --red: #B85C5C;
+  --green: #5A8C5C;
+  --shadow: 0 2px 6px rgba(15, 45, 61, 0.06);
+}
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+body {
+  margin: 0; background: var(--cream); color: var(--ink);
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+  font-size: 15px; line-height: 1.55;
+}
+.wrap { max-width: 1100px; margin: 0 auto; padding: 2.4rem 1.6rem 6rem; }
+.serif { font-family: Georgia, 'Times New Roman', serif; }
+
+/* ---- Header ---- */
+.report-header {
+  border-left: 6px solid var(--gold);
+  padding: 0.4rem 0 0.4rem 1rem;
+  margin-bottom: 1.8rem;
+}
+.report-header h1 {
+  font-family: Georgia, 'Times New Roman', serif;
+  font-size: 2.2rem; color: var(--navy); margin: 0 0 0.3rem 0;
+  letter-spacing: -0.01em;
+}
+.report-header .meta {
+  color: var(--muted); font-size: 0.92rem; font-style: italic;
+}
+
+/* ---- KPI strip ---- */
+.kpi-strip {
+  display: grid; grid-template-columns: repeat(4, 1fr);
+  gap: 1rem; margin: 1.5rem 0 2rem;
+}
+.kpi {
+  background: white; border: 1px solid var(--border);
+  border-left: 4px solid var(--gold); padding: 0.9rem 1.1rem;
+  border-radius: 4px; box-shadow: var(--shadow);
+}
+.kpi .label {
+  color: var(--muted); font-size: 0.72rem; letter-spacing: 0.08em;
+  text-transform: uppercase; font-weight: 600;
+}
+.kpi .value {
+  font-family: Georgia, serif; color: var(--navy);
+  font-size: 1.85rem; font-weight: 700; margin-top: 0.25rem;
+}
+.kpi .sub { color: var(--muted); font-size: 0.82rem; margin-top: 0.15rem; }
+
+/* ---- TOC ---- */
+.toc {
+  background: white; border: 1px solid var(--border); border-radius: 6px;
+  padding: 1rem 1.3rem; margin-bottom: 2.4rem;
+}
+.toc h3 {
+  margin: 0 0 0.6rem; font-size: 0.78rem; letter-spacing: 0.1em;
+  text-transform: uppercase; color: var(--muted); font-weight: 700;
+}
+.toc ol {
+  margin: 0; padding-left: 1.2rem; columns: 2; column-gap: 2.5rem;
+}
+.toc li { margin: 0.18rem 0; }
+.toc a { color: var(--navy); text-decoration: none; font-weight: 500; }
+.toc a:hover { color: var(--gold); }
+
+/* ---- Section ---- */
+section {
+  background: white; border: 1px solid var(--border); border-radius: 6px;
+  padding: 1.6rem 1.8rem; margin-bottom: 1.6rem; box-shadow: var(--shadow);
+  scroll-margin-top: 1rem;
+}
+section h2 {
+  font-family: Georgia, serif; color: var(--navy); margin: 0 0 0.4rem;
+  font-size: 1.55rem; border-bottom: 2px solid var(--gold);
+  padding-bottom: 0.5rem; display: inline-block;
+}
+section h3 {
+  color: var(--navy); font-size: 1.15rem; margin: 1.4rem 0 0.4rem;
+  font-weight: 700;
+}
+section h4 {
+  color: var(--navy); font-size: 1rem; margin: 1.1rem 0 0.3rem;
+  font-weight: 700;
+}
+section p, section li { color: var(--ink); }
+.muted { color: var(--muted); }
+
+/* ---- Tables ---- */
+table {
+  width: 100%; border-collapse: collapse; margin: 0.6rem 0;
+  font-size: 0.92rem;
+}
+th, td {
+  text-align: left; padding: 0.55rem 0.7rem;
+  border-bottom: 1px solid var(--border);
+}
+th {
+  background: var(--cream); color: var(--navy); font-weight: 700;
+  font-size: 0.78rem; letter-spacing: 0.04em; text-transform: uppercase;
+}
+td.num { text-align: right; font-variant-numeric: tabular-nums; }
+
+/* ---- Pain point cards ---- */
+.pain {
+  border: 1px solid var(--border); border-left: 3px solid var(--gold);
+  padding: 0.9rem 1.1rem; margin: 0.8rem 0; border-radius: 4px;
+  background: #fdfcf7;
+}
+.pain .title { font-weight: 700; color: var(--navy); font-size: 1.05rem; }
+.pain .stats {
+  color: var(--muted); font-size: 0.82rem; margin: 0.2rem 0 0.4rem;
+}
+.pain p { margin: 0.35rem 0; }
+
+/* ---- Critical issues ---- */
+.critical {
+  display: grid; grid-template-columns: 60px 1fr; gap: 0.8rem;
+  border: 1px solid var(--border); border-radius: 4px;
+  padding: 1rem 1.1rem; margin: 0.8rem 0; background: white;
+}
+.critical .rank {
+  font-family: Georgia, serif; font-size: 1.9rem; font-weight: 700;
+  color: var(--gold); text-align: center; line-height: 1;
+  border-right: 1px solid var(--border); padding-right: 0.8rem;
+  display: flex; align-items: center; justify-content: center;
+}
+.critical .body .title {
+  font-weight: 700; color: var(--navy); font-size: 1.08rem;
+}
+.critical .body .why {
+  color: var(--ink); margin: 0.4rem 0 0.5rem; font-size: 0.95rem;
+}
+.critical .body .stats { color: var(--muted); font-size: 0.82rem; }
+
+/* ---- Chips ---- */
+.chip {
+  display: inline-block; background: var(--cream); border: 1px solid var(--border);
+  color: var(--navy); padding: 0.15rem 0.5rem; border-radius: 99px;
+  font-size: 0.78rem; font-weight: 600; margin-right: 0.25rem;
+  font-variant-numeric: tabular-nums;
+}
+.badge {
+  display: inline-block; padding: 0.15rem 0.55rem; border-radius: 4px;
+  font-size: 0.72rem; font-weight: 700; letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.badge.high   { background: #fce8e8; color: var(--red); }
+.badge.med    { background: #fff4d9; color: #8a6a00; }
+.badge.medium { background: #fff4d9; color: #8a6a00; }
+.badge.low    { background: #e7f0e7; color: var(--green); }
+
+/* ---- Quotes ---- */
+blockquote {
+  margin: 0.6rem 0; padding: 0.7rem 0.9rem; background: var(--cream);
+  border-left: 3px solid var(--gold); border-radius: 3px;
+}
+blockquote p { margin: 0 0 0.3rem; font-style: italic; color: var(--ink); }
+blockquote footer {
+  color: var(--muted); font-size: 0.82rem; font-style: normal;
+}
+blockquote footer strong { color: var(--navy); }
+
+/* ---- Bar chart ---- */
+.bar-row {
+  display: grid; grid-template-columns: 220px 1fr 70px;
+  gap: 0.8rem; align-items: center; margin: 0.35rem 0;
+}
+.bar-label { font-size: 0.9rem; color: var(--navy); font-weight: 500; }
+.bar-track {
+  background: var(--cream); border: 1px solid var(--border); border-radius: 3px;
+  height: 18px; overflow: hidden;
+}
+.bar-fill { height: 100%; background: var(--gold); transition: width .3s; }
+.bar-value {
+  text-align: right; font-variant-numeric: tabular-nums;
+  color: var(--navy); font-weight: 600; font-size: 0.88rem;
+}
+
+/* ---- Recommendation rows ---- */
+.rec {
+  border: 1px solid var(--border); border-left: 3px solid var(--navy);
+  padding: 0.9rem 1.1rem; margin: 0.7rem 0; background: white;
+  border-radius: 4px;
+}
+.rec .head { display: flex; align-items: center; gap: 0.6rem; }
+.rec .head .title { font-weight: 700; color: var(--navy); font-size: 1.02rem; }
+.rec .why { margin: 0.5rem 0; color: var(--ink); }
+
+/* ---- Footer ---- */
+.report-footer {
+  margin-top: 2.6rem; padding-top: 1.2rem;
+  border-top: 1px solid var(--border); color: var(--muted); font-size: 0.85rem;
+}
+
+/* ---- Responsive ---- */
+@media (max-width: 720px) {
+  .kpi-strip { grid-template-columns: repeat(2, 1fr); }
+  .toc ol { columns: 1; }
+  .bar-row { grid-template-columns: 110px 1fr 60px; }
+}
+</style>
+</head>
+<body>
+  <div class="wrap">
+    
+<header class="report-header">
+  <h1>AccessRP &mdash; User Feedback Insights</h1>
+  <div class="meta">April 2026 · ADGM real-estate services portal
+  · 1,089 complaints reviewed</div>
+</header>
+
+
+<div class="kpi-strip">
+  <div class="kpi"><div class="label">Real complaints reviewed</div>
+    <div class="value">1,089</div>
+    <div class="sub">noise & automation filtered out</div></div>
+  <div class="kpi"><div class="label">Unique users affected</div>
+    <div class="value">517</div>
+    <div class="sub">distinct requester emails</div></div>
+  <div class="kpi"><div class="label">Distinct issue themes</div>
+    <div class="value">14</div>
+    <div class="sub">grouped into 8 categories</div></div>
+  <div class="kpi"><div class="label">Avg sentiment (0–100)</div>
+    <div class="value">44.1</div>
+    <div class="sub">Freshdesk score, higher = happier</div></div>
+</div>
+
+
+<nav class="toc">
+  <h3>Contents</h3>
+  <ol>
+    <li><a href="#executive-summary">Executive Summary</a></li>
+    <li><a href="#key-pain-points">Key Pain Points</a></li>
+    <li><a href="#issue-categories">Issue Categories Breakdown</a></li>
+    <li><a href="#repeated-issues">Repeated Issues &amp; Patterns</a></li>
+    <li><a href="#critical-issues">Top 10 Critical Issues</a></li>
+    <li><a href="#top-services">Top 5 Services Analysis</a></li>
+    <li><a href="#service-distribution">Service Distribution</a></li>
+    <li><a href="#recommendations">Strategic Recommendations</a></li>
+  </ol>
+</nav>
+
+
+<section id="executive-summary">
+  <h2>1 · Executive Summary</h2>
+  <p>Between 06 April and 29 April 2026,
+  AccessRP received <strong>1,089 real customer complaints</strong> from
+  <strong>517 unique users</strong> (after filtering out automation,
+  delivery-failure, and submission-confirmation tickets). Average customer
+  sentiment was <strong>44.1/100</strong>.</p>
+
+  <p>Tickets clustered into <strong>8 high-level issue categories</strong>,
+  with the largest share belonging to
+  <strong>Business / Process</strong> (483 tickets)
+  and <strong>Language / UX</strong> (159).</p>
+
+  <h3>Three findings stakeholders should act on</h3>
+  <ol>
+    <li><strong>Volume:</strong> <em>Lease / tenancy</em> is the
+        most-reported issue (249 tickets, 145 users
+        affected). Top services involved: Lease, Company management, Owner Services.</li>
+    <li><strong>Severity:</strong> <em>Error / system issue</em> drives
+        the angriest tickets in the period (avg sentiment
+        31). It is concentrated in
+        Lease, Transaction, Developer Services.</li>
+    <li><strong>Service hotspot:</strong> <em>Lease</em>
+        accounts for 319 of the 1,089 tickets
+        (29% of total) — any improvement
+        here has the largest immediate volume impact.</li>
+  </ol>
+  <p class="muted">Methodology, ticket-ID conventions, and PII handling are
+  noted in the footer.</p>
+</section>
+
+<section id="key-pain-points"><h2>2 · Key Pain Points</h2>
+<p>Pain points are user-experienced frictions, blockers, and gaps surfaced across tickets. Each item below is backed by example ticket IDs and verbatim user text (with PII redacted) for verification.</p>
+
+<div class="pain">
+  <div class="title">Lease / tenancy</div>
+  <div class="stats">249 tickets · 145 users · avg sentiment 42
+   · category: Business / Process</div>
+  <p>Users consistently lack awareness of rules like the 90-day automatic contract closure after expiry. Surface these rules in the service card BEFORE the user starts a flow, not after they&#x27;re blocked.</p>
+  <div><span class="chip">#19338</span> <span class="chip">#19463</span> <span class="chip">#18654</span></div>
+  <blockquote><p>Currently, the system has selected “One installment during the application – Paid by lessor,” whereas the intended arrangement is for the fee to be included in the utilities and paid by the tenant (lessee) through monthly installments. Could you please assist in correcting this setting to: “Monthly installments (includ</p><footer>Ticket <strong>#19338</strong> · Lease</footer></blockquote>
+<blockquote><p>However, I purchased this apartment in 2026, and as the new owner, I am now in the process of registering a new Tawtheeq contract for my tenant.</p><footer>Ticket <strong>#19463</strong> · Lease</footer></blockquote>
+</div>
+
+<div class="pain">
+  <div class="title">Arabic-language ticket</div>
+  <div class="stats">159 tickets · 37 users · avg sentiment 64
+   · category: Language / UX</div>
+  <p>Many Arabic-language tickets repeat patterns also seen in English. Verify the Arabic UI exposes the same self-serve options to avoid duplicating support load.</p>
+  <div><span class="chip">#18568</span> <span class="chip">#19074</span> <span class="chip">#18477</span></div>
+  <blockquote><p>Please assist as customer is trying to transfer and error massage the property is not transferred appears while the property was transfered Title deed land [id] [id] Transfer of interest land Dear Team, I am unable to initiate the Transfer of Interest — Land for RT4-C11a. the land currently under SAAS Properties LLC an</p><footer>Ticket <strong>#18568</strong> · Transaction</footer></blockquote>
+<blockquote><p>I want to renew the contract for the tenant in my apartment, but I am facing an issue in the system. This message appears: “The selected property is blocked,” as shown in the attached image.</p><footer>Ticket <strong>#19074</strong> · Lease</footer></blockquote>
+</div>
+
+<div class="pain">
+  <div class="title">Data correction / update</div>
+  <div class="stats">138 tickets · 88 users · avg sentiment 39
+   · category: Data</div>
+  <p>20%+ of helpdesk volume is users asking back-office staff to edit fields they should be able to edit themselves (email, phone, license details, owner info). A first-class &#x27;Modify my information&#x27; flow would deflect a large share of tickets immediately.</p>
+  <div><span class="chip">#19175</span> <span class="chip">#18045</span> <span class="chip">#18112</span></div>
+  <blockquote><p>Despite multiple follow-ups, including my most recent URGENT email dated 13 April 2026, I have not received any response or update from your side.</p><footer>Ticket <strong>#19175</strong> · Transaction</footer></blockquote>
+<blockquote><p>Dears at ADGM, I am reaching out for updates, as I have recieved my new bill from TAQA and the issue is not yet resolved.</p><footer>Ticket <strong>#18045</strong> · Lease</footer></blockquote>
+</div>
+
+<div class="pain">
+  <div class="title">Transfer / POA</div>
+  <div class="stats">126 tickets · 69 users · avg sentiment 41
+   · category: Business / Process</div>
+  <p>A meaningful chunk of Transfer-of-Interest tickets are structured form submissions sent over email because no UI exists. Build an in-product booking flow with calendar slots and instant confirmation.</p>
+  <div><span class="chip">#18568</span> <span class="chip">#18948</span> <span class="chip">#18193</span></div>
+  <blockquote><p>Please assist as customer is trying to transfer and error massage the property is not transferred appears while the property was transfered Title deed land [id] [id] Transfer of interest land Dear Team, I am unable to initiate the Transfer of Interest — Land for RT4-C11a. the land currently under SAAS Properties LLC an</p><footer>Ticket <strong>#18568</strong> · Transaction</footer></blockquote>
+<blockquote><p>Sara has a POA from the Sultan.</p><footer>Ticket <strong>#18948</strong> · Personal Account</footer></blockquote>
+</div>
+
+<div class="pain">
+  <div class="title">Payment / Wallet</div>
+  <div class="stats">122 tickets · 78 users · avg sentiment 40
+   · category: Payment</div>
+  <p>Recurring pattern of &#x27;I paid but the system still asks me to pay&#x27; or &#x27;money deducted, no receipt issued&#x27;. Investigate the gateway → ledger → application-status handoff and surface a self-serve payment-status / refund page.</p>
+  <div><span class="chip">#19175</span> <span class="chip">#19338</span> <span class="chip">#18185</span></div>
+  <blockquote><p>In the meantime, the developer, Reportage Properties, continues to issue repeated payment demands and</p><footer>Ticket <strong>#19175</strong> · Transaction</footer></blockquote>
+<blockquote><p>I am writing to report an issue encountered during the application process regarding the 5% ADGM fee payment option. Currently, the system has selected “One installment during the application – Paid by lessor,” whereas the intended arrangement is for the fee to be included in the utilities and paid by the tenant (lesse</p><footer>Ticket <strong>#19338</strong> · Lease</footer></blockquote>
+</div>
+
+<div class="pain">
+  <div class="title">Error / system issue</div>
+  <div class="stats">96 tickets · 54 users · avg sentiment 31
+   · category: Technical</div>
+  <p>Generic error messages are driving ticket volume because users can&#x27;t self-diagnose. Add reference codes to error states and route the most-common errors to specific help content.</p>
+  <div><span class="chip">#18568</span> <span class="chip">#18810</span> <span class="chip">#18654</span></div>
+  <blockquote><p>Please assist as customer is trying to transfer and error massage the property is not transferred appears while the property was transfered Title deed land [id] [id] Transfer of interest land Dear Team, I am unable to initiate the Transfer of Interest — Land for RT4-C11a.</p><footer>Ticket <strong>#18568</strong> · Transaction</footer></blockquote>
+<blockquote><p>Classification : Internal General Purpose Dear Team Good day Service : off plan buy and sell Developer : [license] ISSUE : can’t procced with service receiving error msg that multiple units exist on land Plots details Sector No RT7 – plot number : off plan buy and sell ISSUE : can’t procced with service receiving error</p><footer>Ticket <strong>#18810</strong> · Transaction</footer></blockquote>
+</div>
+
+<div class="pain">
+  <div class="title">Certificate</div>
+  <div class="stats">71 tickets · 56 users · avg sentiment 44
+   · category: Business / Process</div>
+  <p>Users follow up because they can&#x27;t tell whether the certificate was issued. Make status explicit and surface ETA.</p>
+  <div><span class="chip">#18112</span> <span class="chip">#17900</span> <span class="chip">#18682</span></div>
+  <blockquote><p>its beeen 2 weeks , there is no response from your side. VERY DISAPPOINTING!!!</p><footer>Ticket <strong>#18112</strong> · Certificate</footer></blockquote>
+<blockquote><p>The attached Certificate of Incumbency of Global Finn Holding Limited is under Jafza which is a Freezone. I have attached our updated Certificate of Incumbency of Global Finn Holding.</p><footer>Ticket <strong>#17900</strong> · Company management</footer></blockquote>
+</div>
+
+<div class="pain">
+  <div class="title">Appointment / booking</div>
+  <div class="stats">70 tickets · 28 users · avg sentiment 50
+   · category: UX</div>
+  <p>Currently users email support to request, reschedule, or cancel appointments. A simple booking widget would deflect these and give users faster certainty.</p>
+  <div><span class="chip">#17942</span> <span class="chip">#19373</span> <span class="chip">#18936</span></div>
+  <blockquote><p>Please book an appointment for the below request: Appointment Type: Mortgage Buyout (Release and Registration) Customer Name: Jimmy Simon Mobile Number: [phone] Email Address: jimmyae16@ gmail. Please book an appointment for the below request:</p><footer>Ticket <strong>#17942</strong> · Transaction</footer></blockquote>
+<blockquote><p>Please Cancel the below appointment in FreshDesk Calendar Appointment booked with: Nouf Al Blooshi - ADGM</p><footer>Ticket <strong>#19373</strong> · Transaction</footer></blockquote>
+</div>
+</section>
+
+<section id="issue-categories">
+  <h2>3 · Issue Categories Breakdown</h2>
+  <p>Themes have been grouped into eight high-level categories. Percentages
+  are computed against the themed-ticket total (one ticket can match
+  multiple themes, so totals exceed the per-ticket count).</p>
+  <table>
+    <thead>
+      <tr><th>Category</th><th>Tickets</th><th>%</th><th>Themes</th>
+          <th>Sample Ticket IDs</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+  <td><strong>Business / Process</strong></td>
+  <td class="num">483</td>
+  <td class="num">40.2%</td>
+  <td>Lease / tenancy, Transfer / POA, Certificate, Cancellation request, Rejection / declined</td>
+  <td><span class="chip">#19338</span> <span class="chip">#19463</span> <span class="chip">#18654</span> <span class="chip">#18568</span> <span class="chip">#18948</span></td>
+</tr>
+<tr>
+  <td><strong>Language / UX</strong></td>
+  <td class="num">159</td>
+  <td class="num">13.2%</td>
+  <td>Arabic-language ticket</td>
+  <td><span class="chip">#18568</span> <span class="chip">#19074</span> <span class="chip">#18477</span></td>
+</tr>
+<tr>
+  <td><strong>Technical</strong></td>
+  <td class="num">148</td>
+  <td class="num">12.3%</td>
+  <td>Error / system issue, Application stuck / pending, Application not found / missing</td>
+  <td><span class="chip">#18568</span> <span class="chip">#18810</span> <span class="chip">#18654</span> <span class="chip">#18780</span> <span class="chip">#19071</span></td>
+</tr>
+<tr>
+  <td><strong>Data</strong></td>
+  <td class="num">138</td>
+  <td class="num">11.5%</td>
+  <td>Data correction / update</td>
+  <td><span class="chip">#19175</span> <span class="chip">#18045</span> <span class="chip">#18112</span></td>
+</tr>
+<tr>
+  <td><strong>Payment</strong></td>
+  <td class="num">122</td>
+  <td class="num">10.1%</td>
+  <td>Payment / Wallet</td>
+  <td><span class="chip">#19175</span> <span class="chip">#19338</span> <span class="chip">#18185</span></td>
+</tr>
+<tr>
+  <td><strong>UX</strong></td>
+  <td class="num">70</td>
+  <td class="num">5.8%</td>
+  <td>Appointment / booking</td>
+  <td><span class="chip">#17942</span> <span class="chip">#19373</span> <span class="chip">#18936</span></td>
+</tr>
+<tr>
+  <td><strong>Documentation</strong></td>
+  <td class="num">59</td>
+  <td class="num">4.9%</td>
+  <td>Document / attachment issue</td>
+  <td><span class="chip">#18526</span> <span class="chip">#18822</span> <span class="chip">#19070</span></td>
+</tr>
+<tr>
+  <td><strong>Access</strong></td>
+  <td class="num">23</td>
+  <td class="num">1.9%</td>
+  <td>Login / Access</td>
+  <td><span class="chip">#18948</span> <span class="chip">#17808</span> <span class="chip">#18947</span></td>
+</tr>
+    </tbody>
+  </table>
+</section>
+
+<section id="repeated-issues"><h2>4 · Repeated Issues & Patterns</h2>
+<p>Below are the most frequently recurring patterns extracted from the dataset, each with example ticket IDs and the root cause where it can be inferred.</p>
+
+<h4>Lease / tenancy — 249 tickets</h4>
+<p>Users consistently lack awareness of rules like the 90-day automatic contract closure after expiry. Surface these rules in the service card BEFORE the user starts a flow, not after they&#x27;re blocked.</p>
+<div class="muted" style="font-size:0.85rem;margin-bottom:0.3rem;">
+  Top services: Lease, Company management, Owner Services
+</div>
+<div><span class="chip">#19338</span> <span class="chip">#19463</span> <span class="chip">#18654</span></div>
+
+<h4>Arabic-language ticket — 159 tickets</h4>
+<p>Many Arabic-language tickets repeat patterns also seen in English. Verify the Arabic UI exposes the same self-serve options to avoid duplicating support load.</p>
+<div class="muted" style="font-size:0.85rem;margin-bottom:0.3rem;">
+  Top services: ADGM Backoffice, Certificate, Transaction
+</div>
+<div><span class="chip">#18568</span> <span class="chip">#19074</span> <span class="chip">#18477</span></div>
+
+<h4>Data correction / update — 138 tickets</h4>
+<p>20%+ of helpdesk volume is users asking back-office staff to edit fields they should be able to edit themselves (email, phone, license details, owner info). A first-class &#x27;Modify my information&#x27; flow would deflect a large share of tickets immediately.</p>
+<div class="muted" style="font-size:0.85rem;margin-bottom:0.3rem;">
+  Top services: Lease, Company management, Transaction
+</div>
+<div><span class="chip">#19175</span> <span class="chip">#18045</span> <span class="chip">#18112</span></div>
+
+<h4>Transfer / POA — 126 tickets</h4>
+<p>A meaningful chunk of Transfer-of-Interest tickets are structured form submissions sent over email because no UI exists. Build an in-product booking flow with calendar slots and instant confirmation.</p>
+<div class="muted" style="font-size:0.85rem;margin-bottom:0.3rem;">
+  Top services: Transaction, POA Services, Lease
+</div>
+<div><span class="chip">#18568</span> <span class="chip">#18948</span> <span class="chip">#18193</span></div>
+
+<h4>Payment / Wallet — 122 tickets</h4>
+<p>Recurring pattern of &#x27;I paid but the system still asks me to pay&#x27; or &#x27;money deducted, no receipt issued&#x27;. Investigate the gateway → ledger → application-status handoff and surface a self-serve payment-status / refund page.</p>
+<div class="muted" style="font-size:0.85rem;margin-bottom:0.3rem;">
+  Top services: Wallet, Lease, Certificate
+</div>
+<div><span class="chip">#19175</span> <span class="chip">#19338</span> <span class="chip">#18185</span></div>
+
+<h4>Error / system issue — 96 tickets</h4>
+<p>Generic error messages are driving ticket volume because users can&#x27;t self-diagnose. Add reference codes to error states and route the most-common errors to specific help content.</p>
+<div class="muted" style="font-size:0.85rem;margin-bottom:0.3rem;">
+  Top services: Lease, Transaction, Developer Services
+</div>
+<div><span class="chip">#18568</span> <span class="chip">#18810</span> <span class="chip">#18654</span></div>
+</section>
+<section id="critical-issues"><h2>5 · Top 10 Critical Issues</h2>
+<p>Ranked by <code>tickets × (100 − avg sentiment)</code> — high-volume or low-sentiment items rise to the top. A high rank here implies either a wide-blast-radius issue or a concentrated source of frustration (often both).</p>
+
+<div class="critical">
+  <div class="rank">1</div>
+  <div class="body">
+    <div class="title">Lease / tenancy <span class="badge medium">Business / Process</span></div>
+    <div class="why"><strong>Why critical:</strong> high volume (249 tickets); affects 145+ unique users.</div>
+    <div class="stats">249 tickets · 145 users
+      · avg sentiment 42 · top services:
+      Lease, Company management, Owner Services
+    </div>
+    <div style="margin-top:0.5rem"><span class="chip">#19338</span> <span class="chip">#19463</span> <span class="chip">#18654</span></div>
+  </div>
+</div>
+
+<div class="critical">
+  <div class="rank">2</div>
+  <div class="body">
+    <div class="title">Data correction / update <span class="badge medium">Data</span></div>
+    <div class="why"><strong>Why critical:</strong> high volume (138 tickets).</div>
+    <div class="stats">138 tickets · 88 users
+      · avg sentiment 39 · top services:
+      Lease, Company management, Transaction
+    </div>
+    <div style="margin-top:0.5rem"><span class="chip">#19175</span> <span class="chip">#18045</span> <span class="chip">#18112</span></div>
+  </div>
+</div>
+
+<div class="critical">
+  <div class="rank">3</div>
+  <div class="body">
+    <div class="title">Transfer / POA <span class="badge medium">Business / Process</span></div>
+    <div class="why"><strong>Why critical:</strong> high volume (126 tickets).</div>
+    <div class="stats">126 tickets · 69 users
+      · avg sentiment 41 · top services:
+      Transaction, POA Services, Lease
+    </div>
+    <div style="margin-top:0.5rem"><span class="chip">#18568</span> <span class="chip">#18948</span> <span class="chip">#18193</span></div>
+  </div>
+</div>
+
+<div class="critical">
+  <div class="rank">4</div>
+  <div class="body">
+    <div class="title">Payment / Wallet <span class="badge medium">Payment</span></div>
+    <div class="why"><strong>Why critical:</strong> high volume (122 tickets).</div>
+    <div class="stats">122 tickets · 78 users
+      · avg sentiment 40 · top services:
+      Wallet, Lease, Certificate
+    </div>
+    <div style="margin-top:0.5rem"><span class="chip">#19175</span> <span class="chip">#19338</span> <span class="chip">#18185</span></div>
+  </div>
+</div>
+
+<div class="critical">
+  <div class="rank">5</div>
+  <div class="body">
+    <div class="title">Error / system issue <span class="badge medium">Technical</span></div>
+    <div class="why"><strong>Why critical:</strong> low sentiment (31/100).</div>
+    <div class="stats">96 tickets · 54 users
+      · avg sentiment 31 · top services:
+      Lease, Transaction, Developer Services
+    </div>
+    <div style="margin-top:0.5rem"><span class="chip">#18568</span> <span class="chip">#18810</span> <span class="chip">#18654</span></div>
+  </div>
+</div>
+
+<div class="critical">
+  <div class="rank">6</div>
+  <div class="body">
+    <div class="title">Arabic-language ticket <span class="badge medium">Language / UX</span></div>
+    <div class="why"><strong>Why critical:</strong> high volume (159 tickets).</div>
+    <div class="stats">159 tickets · 37 users
+      · avg sentiment 64 · top services:
+      ADGM Backoffice, Certificate, Transaction
+    </div>
+    <div style="margin-top:0.5rem"><span class="chip">#18568</span> <span class="chip">#19074</span> <span class="chip">#18477</span></div>
+  </div>
+</div>
+
+<div class="critical">
+  <div class="rank">7</div>
+  <div class="body">
+    <div class="title">Certificate <span class="badge medium">Business / Process</span></div>
+    <div class="why"><strong>Why critical:</strong> recurring multi-service pattern.</div>
+    <div class="stats">71 tickets · 56 users
+      · avg sentiment 44 · top services:
+      Transaction, Certificate, Lease
+    </div>
+    <div style="margin-top:0.5rem"><span class="chip">#18112</span> <span class="chip">#17900</span> <span class="chip">#18682</span></div>
+  </div>
+</div>
+
+<div class="critical">
+  <div class="rank">8</div>
+  <div class="body">
+    <div class="title">Document / attachment issue <span class="badge medium">Documentation</span></div>
+    <div class="why"><strong>Why critical:</strong> recurring multi-service pattern.</div>
+    <div class="stats">59 tickets · 44 users
+      · avg sentiment 36 · top services:
+      Lease, Transaction, Madhmoun
+    </div>
+    <div style="margin-top:0.5rem"><span class="chip">#18526</span> <span class="chip">#18822</span> <span class="chip">#19070</span></div>
+  </div>
+</div>
+
+<div class="critical">
+  <div class="rank">9</div>
+  <div class="body">
+    <div class="title">Appointment / booking <span class="badge medium">UX</span></div>
+    <div class="why"><strong>Why critical:</strong> recurring multi-service pattern.</div>
+    <div class="stats">70 tickets · 28 users
+      · avg sentiment 50 · top services:
+      Transaction, Lease, Developer Services
+    </div>
+    <div style="margin-top:0.5rem"><span class="chip">#17942</span> <span class="chip">#19373</span> <span class="chip">#18936</span></div>
+  </div>
+</div>
+
+<div class="critical">
+  <div class="rank">10</div>
+  <div class="body">
+    <div class="title">Application stuck / pending <span class="badge medium">Technical</span></div>
+    <div class="why"><strong>Why critical:</strong> recurring multi-service pattern.</div>
+    <div class="stats">40 tickets · 32 users
+      · avg sentiment 36 · top services:
+      Lease, Certificate, Transaction
+    </div>
+    <div style="margin-top:0.5rem"><span class="chip">#18780</span> <span class="chip">#19071</span> <span class="chip">#18634</span></div>
+  </div>
+</div>
+</section>
+<section id="top-services"><h2>6 · Top 5 Services Analysis</h2>
+<p>The five services that received the largest share of real complaints in the period. For each, the dominant issue patterns and example ticket IDs are listed.</p>
+
+<h3>Lease — 319 tickets · 177 users</h3>
+<p>Average sentiment 42/100. Most-reported issue patterns
+within this service:</p>
+<ul><li><strong>Lease / tenancy</strong> — 204 tickets</li><li><strong>Data correction / update</strong> — 31 tickets</li><li><strong>Error / system issue</strong> — 27 tickets</li><li><strong>Payment / Wallet</strong> — 20 tickets</li></ul>
+<div>Example tickets: <span class="chip">#19338</span> <span class="chip">#19131</span> <span class="chip">#17901</span></div>
+
+<h3>Transaction — 214 tickets · 126 users</h3>
+<p>Average sentiment 45/100. Most-reported issue patterns
+within this service:</p>
+<ul><li><strong>Transfer / POA</strong> — 89 tickets</li><li><strong>Appointment / booking</strong> — 68 tickets</li><li><strong>Certificate</strong> — 21 tickets</li><li><strong>Data correction / update</strong> — 18 tickets</li></ul>
+<div>Example tickets: <span class="chip">#19175</span> <span class="chip">#18810</span> <span class="chip">#18568</span></div>
+
+<h3>ADGM Backoffice — 89 tickets · 4 users</h3>
+<p>Average sentiment 72/100. Most-reported issue patterns
+within this service:</p>
+<ul><li><strong>Arabic-language ticket</strong> — 88 tickets</li><li><strong>Payment / Wallet</strong> — 12 tickets</li></ul>
+<div>Example tickets: <span class="chip">#17640</span> <span class="chip">#18544</span> <span class="chip">#18850</span></div>
+
+<h3>Certificate — 86 tickets · 57 users</h3>
+<p>Average sentiment 45/100. Most-reported issue patterns
+within this service:</p>
+<ul><li><strong>Arabic-language ticket</strong> — 22 tickets</li><li><strong>Certificate</strong> — 19 tickets</li><li><strong>Payment / Wallet</strong> — 18 tickets</li><li><strong>Application stuck / pending</strong> — 9 tickets</li></ul>
+<div>Example tickets: <span class="chip">#18514</span> <span class="chip">#18112</span> <span class="chip">#19163</span></div>
+
+<h3>Company management — 76 tickets · 56 users</h3>
+<p>Average sentiment 39/100. Most-reported issue patterns
+within this service:</p>
+<ul><li><strong>Data correction / update</strong> — 28 tickets</li><li><strong>Lease / tenancy</strong> — 21 tickets</li><li><strong>Document / attachment issue</strong> — 6 tickets</li><li><strong>Error / system issue</strong> — 6 tickets</li></ul>
+<div>Example tickets: <span class="chip">#18573</span> <span class="chip">#18682</span> <span class="chip">#17900</span></div>
+</section>
+
+<section id="service-distribution">
+  <h2>7 · Service Distribution</h2>
+  <p>Ticket count by service (top 12). The first three services account for
+  a disproportionate share of the workload — they're the targets that yield
+  the largest deflection wins.</p>
+  <div class="bar-row"><div class="bar-label">Lease</div><div class="bar-track"><div class="bar-fill" style="width:100.0%"></div></div><div class="bar-value">319</div></div>
+<div class="bar-row"><div class="bar-label">Transaction</div><div class="bar-track"><div class="bar-fill" style="width:67.1%"></div></div><div class="bar-value">214</div></div>
+<div class="bar-row"><div class="bar-label">ADGM Backoffice</div><div class="bar-track"><div class="bar-fill" style="width:27.9%"></div></div><div class="bar-value">89</div></div>
+<div class="bar-row"><div class="bar-label">Certificate</div><div class="bar-track"><div class="bar-fill" style="width:27.0%"></div></div><div class="bar-value">86</div></div>
+<div class="bar-row"><div class="bar-label">Company management</div><div class="bar-track"><div class="bar-fill" style="width:23.8%"></div></div><div class="bar-value">76</div></div>
+<div class="bar-row"><div class="bar-label">Madhmoun</div><div class="bar-track"><div class="bar-fill" style="width:19.7%"></div></div><div class="bar-value">63</div></div>
+<div class="bar-row"><div class="bar-label">Developer Services</div><div class="bar-track"><div class="bar-fill" style="width:16.9%"></div></div><div class="bar-value">54</div></div>
+<div class="bar-row"><div class="bar-label">Owner Services</div><div class="bar-track"><div class="bar-fill" style="width:15.0%"></div></div><div class="bar-value">48</div></div>
+<div class="bar-row"><div class="bar-label">Personal Account</div><div class="bar-track"><div class="bar-fill" style="width:15.0%"></div></div><div class="bar-value">48</div></div>
+<div class="bar-row"><div class="bar-label">Wallet</div><div class="bar-track"><div class="bar-fill" style="width:8.5%"></div></div><div class="bar-value">27</div></div>
+<div class="bar-row"><div class="bar-label">Mortgages and Financing</div><div class="bar-track"><div class="bar-fill" style="width:8.2%"></div></div><div class="bar-value">26</div></div>
+<div class="bar-row"><div class="bar-label">POA Services</div><div class="bar-track"><div class="bar-fill" style="width:6.9%"></div></div><div class="bar-value">22</div></div>
+</section>
+
+<section id="recommendations"><h2>8 · Strategic Recommendations</h2>
+<p>Recommendations are ordered by the priority of the theme they address. Each links back to the pain point and ticket IDs in earlier sections.</p>
+
+<div class="rec">
+  <div class="head"><span class="badge medium">Medium priority</span>
+    <span class="title">Make business rules visible inside the lease service</span></div>
+  <div class="why">Users consistently lack awareness of rules like the 90-day automatic contract closure after expiry. Surface these rules in the service card BEFORE the user starts a flow, not after they&#x27;re blocked.</div>
+  <div class="muted" style="font-size:0.85rem;">Addresses:
+    <em>Lease / tenancy</em> · 249 tickets · 145 users
+    · sample: <span class="chip">#19338</span> <span class="chip">#19463</span> <span class="chip">#18654</span>
+  </div>
+</div>
+
+<div class="rec">
+  <div class="head"><span class="badge high">High priority</span>
+    <span class="title">Build self-serve data-correction inside AccessRP</span></div>
+  <div class="why">20%+ of helpdesk volume is users asking back-office staff to edit fields they should be able to edit themselves (email, phone, license details, owner info). A first-class &#x27;Modify my information&#x27; flow would deflect a large share of tickets immediately.</div>
+  <div class="muted" style="font-size:0.85rem;">Addresses:
+    <em>Data correction / update</em> · 138 tickets · 88 users
+    · sample: <span class="chip">#19175</span> <span class="chip">#18045</span> <span class="chip">#18112</span>
+  </div>
+</div>
+
+<div class="rec">
+  <div class="head"><span class="badge high">High priority</span>
+    <span class="title">Replace email-based appointment booking with a proper in-product form</span></div>
+  <div class="why">A meaningful chunk of Transfer-of-Interest tickets are structured form submissions sent over email because no UI exists. Build an in-product booking flow with calendar slots and instant confirmation.</div>
+  <div class="muted" style="font-size:0.85rem;">Addresses:
+    <em>Transfer / POA</em> · 126 tickets · 69 users
+    · sample: <span class="chip">#18568</span> <span class="chip">#18948</span> <span class="chip">#18193</span>
+  </div>
+</div>
+
+<div class="rec">
+  <div class="head"><span class="badge high">High priority</span>
+    <span class="title">Audit payment-to-receipt pipeline and add duplicate-payment guards</span></div>
+  <div class="why">Recurring pattern of &#x27;I paid but the system still asks me to pay&#x27; or &#x27;money deducted, no receipt issued&#x27;. Investigate the gateway → ledger → application-status handoff and surface a self-serve payment-status / refund page.</div>
+  <div class="muted" style="font-size:0.85rem;">Addresses:
+    <em>Payment / Wallet</em> · 122 tickets · 78 users
+    · sample: <span class="chip">#19175</span> <span class="chip">#19338</span> <span class="chip">#18185</span>
+  </div>
+</div>
+
+<div class="rec">
+  <div class="head"><span class="badge high">High priority</span>
+    <span class="title">Categorise &#x27;something went wrong&#x27; errors and add structured logging</span></div>
+  <div class="why">Generic error messages are driving ticket volume because users can&#x27;t self-diagnose. Add reference codes to error states and route the most-common errors to specific help content.</div>
+  <div class="muted" style="font-size:0.85rem;">Addresses:
+    <em>Error / system issue</em> · 96 tickets · 54 users
+    · sample: <span class="chip">#18568</span> <span class="chip">#18810</span> <span class="chip">#18654</span>
+  </div>
+</div>
+
+<div class="rec">
+  <div class="head"><span class="badge medium">Medium priority</span>
+    <span class="title">Ensure Arabic-speaking users have parity in self-serve flows</span></div>
+  <div class="why">Many Arabic-language tickets repeat patterns also seen in English. Verify the Arabic UI exposes the same self-serve options to avoid duplicating support load.</div>
+  <div class="muted" style="font-size:0.85rem;">Addresses:
+    <em>Arabic-language ticket</em> · 159 tickets · 37 users
+    · sample: <span class="chip">#18568</span> <span class="chip">#19074</span> <span class="chip">#18477</span>
+  </div>
+</div>
+
+<div class="rec">
+  <div class="head"><span class="badge medium">Medium priority</span>
+    <span class="title">Improve certificate / NOC generation reliability and visibility</span></div>
+  <div class="why">Users follow up because they can&#x27;t tell whether the certificate was issued. Make status explicit and surface ETA.</div>
+  <div class="muted" style="font-size:0.85rem;">Addresses:
+    <em>Certificate</em> · 71 tickets · 56 users
+    · sample: <span class="chip">#18112</span> <span class="chip">#17900</span> <span class="chip">#18682</span>
+  </div>
+</div>
+
+<div class="rec">
+  <div class="head"><span class="badge medium">Medium priority</span>
+    <span class="title">Audit upload limits, file-type support, and PDF generation</span></div>
+  <div class="why">Repeated complaints about uploads failing or generated documents being missing/wrong. Review the document pipeline end-to-end.</div>
+  <div class="muted" style="font-size:0.85rem;">Addresses:
+    <em>Document / attachment issue</em> · 59 tickets · 44 users
+    · sample: <span class="chip">#18526</span> <span class="chip">#18822</span> <span class="chip">#19070</span>
+  </div>
+</div>
+
+<div class="rec">
+  <div class="head"><span class="badge medium">Medium priority</span>
+    <span class="title">Build self-serve appointment booking + rescheduling</span></div>
+  <div class="why">Currently users email support to request, reschedule, or cancel appointments. A simple booking widget would deflect these and give users faster certainty.</div>
+  <div class="muted" style="font-size:0.85rem;">Addresses:
+    <em>Appointment / booking</em> · 70 tickets · 28 users
+    · sample: <span class="chip">#17942</span> <span class="chip">#19373</span> <span class="chip">#18936</span>
+  </div>
+</div>
+
+<div class="rec">
+  <div class="head"><span class="badge medium">Medium priority</span>
+    <span class="title">Make application status and ETA visible to the user</span></div>
+  <div class="why">Users raise tickets because they have no visibility into where their application is in the workflow. Expose stage + expected duration in the application page; alert internally when items idle &gt; N days.</div>
+  <div class="muted" style="font-size:0.85rem;">Addresses:
+    <em>Application stuck / pending</em> · 40 tickets · 32 users
+    · sample: <span class="chip">#18780</span> <span class="chip">#19071</span> <span class="chip">#18634</span>
+  </div>
+</div>
+</section>
+
+<div class="report-footer">
+  <p><strong>Methodology.</strong> Source data: AccessRP Freshdesk export
+  for the period covered. Tickets in the
+  &ldquo;Ads Test Tickets and Auto-Emails&rdquo; service and tickets matching
+  auto-reply / delivery-failure / submission-confirmation patterns are
+  excluded from this analysis. Themes are derived via a rule-based classifier
+  applied to subject and description text.</p>
+
+  <p><strong>Ticket IDs.</strong> Numeric IDs are Freshdesk's internal
+  ticket numbers and are meaningless without access to the helpdesk.</p>
+
+  <p><strong>PII handling.</strong> Verbatim quotes have been redacted:
+  email addresses, phone numbers, EID-style identifiers, application
+  reference numbers, unit numbers, licence numbers, passport numbers, and
+  URLs are replaced with bracketed placeholders. Customer names that appear
+  inside the prose body are <em>not</em> automatically masked &mdash; review
+  before publishing if your dataset contains names embedded in
+  free-text descriptions.</p>
+
+  <p class="muted" style="margin-top:1.2rem;">
+    Generated on 2026-05-18 13:44 ·
+    Source repo:
+    <a href="https://github.com/ymedhatadres/accessrp-dashboard"
+       style="color: var(--navy);">ymedhatadres/accessrp-dashboard</a>
+  </p>
+</div>
+
+  </div>
+</body>
+</html>
