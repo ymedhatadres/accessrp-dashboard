@@ -61,24 +61,34 @@ body {
 }
 .kpi .sub { color: var(--muted); font-size: 0.82rem; margin-top: 0.15rem; }
 
-/* ---- TOC ---- */
-.toc {
+/* ---- Tab bar ---- */
+nav.tabs {
   background: white; border: 1px solid var(--border); border-radius: 6px;
-  padding: 1rem 1.3rem; margin-bottom: 2.4rem;
+  margin-bottom: 1.6rem; position: sticky; top: 0; z-index: 10;
+  box-shadow: var(--shadow);
 }
-.toc h3 {
-  margin: 0 0 0.6rem; font-size: 0.78rem; letter-spacing: 0.1em;
-  text-transform: uppercase; color: var(--muted); font-weight: 700;
+nav.tabs .container {
+  display: flex; gap: 0; overflow-x: auto; padding: 0;
+  -webkit-overflow-scrolling: touch;
 }
-.toc ol {
-  margin: 0; padding-left: 1.2rem; columns: 2; column-gap: 2.5rem;
+nav.tabs button.tab-btn {
+  background: transparent; border: none; cursor: pointer;
+  padding: 0.85rem 1.1rem; font-size: 0.9rem; font-weight: 500;
+  color: var(--muted); white-space: nowrap;
+  border-bottom: 3px solid transparent;
+  transition: color .15s, border-color .15s;
+  font-family: inherit;
 }
-.toc li { margin: 0.18rem 0; }
-.toc a { color: var(--navy); text-decoration: none; font-weight: 500; }
-.toc a:hover { color: var(--gold); }
+nav.tabs button.tab-btn:hover { color: var(--navy); }
+nav.tabs button.tab-btn.active {
+  color: var(--navy); border-bottom-color: var(--gold);
+  font-weight: 700;
+}
 
-/* ---- Section ---- */
-section {
+/* ---- Section (tab content) ---- */
+.tab-content { display: none; }
+.tab-content.active { display: block; }
+section.tab-content {
   background: white; border: 1px solid var(--border); border-radius: 6px;
   padding: 1.6rem 1.8rem; margin-bottom: 1.6rem; box-shadow: var(--shadow);
   scroll-margin-top: 1rem;
@@ -240,22 +250,21 @@ blockquote footer strong { color: var(--navy); }
 </div>
 
 
-<nav class="toc">
-  <h3>Contents</h3>
-  <ol>
-    <li><a href="#executive-summary">Executive Summary</a></li>
-    <li><a href="#key-pain-points">Key Pain Points</a></li>
-    <li><a href="#issue-categories">Issue Categories Breakdown</a></li>
-    <li><a href="#repeated-issues">Repeated Issues &amp; Patterns</a></li>
-    <li><a href="#critical-issues">Top 10 Critical Issues</a></li>
-    <li><a href="#top-services">Top 5 Services Analysis</a></li>
-    <li><a href="#service-distribution">Service Distribution</a></li>
-    <li><a href="#recommendations">Strategic Recommendations</a></li>
-  </ol>
+<nav class="tabs">
+  <div class="container">
+    <button class="tab-btn active" data-tab="exec">Executive Summary</button>
+    <button class="tab-btn" data-tab="pain">Key Pain Points</button>
+    <button class="tab-btn" data-tab="categories">Issue Categories</button>
+    <button class="tab-btn" data-tab="repeated">Repeated Issues</button>
+    <button class="tab-btn" data-tab="critical">Top 10 Critical</button>
+    <button class="tab-btn" data-tab="services">Top 5 Services</button>
+    <button class="tab-btn" data-tab="distribution">Service Distribution</button>
+    <button class="tab-btn" data-tab="recs">Recommendations</button>
+  </div>
 </nav>
 
 
-<section id="executive-summary">
+<section id="exec" class="tab-content active">
   <h2>1 · Executive Summary</h2>
   <p>Between 06 April and 29 April 2026,
   AccessRP received <strong>1,089 real customer complaints</strong> from
@@ -286,7 +295,7 @@ blockquote footer strong { color: var(--navy); }
   noted in the footer.</p>
 </section>
 
-<section id="key-pain-points"><h2>2 · Key Pain Points</h2>
+<section id="pain" class="tab-content"><h2>2 · Key Pain Points</h2>
 <p>Pain points are user-experienced frictions, blockers, and gaps surfaced across tickets. Each item below is backed by example ticket IDs and verbatim user text (with PII redacted) for verification.</p>
 
 <div class="pain">
@@ -370,7 +379,7 @@ blockquote footer strong { color: var(--navy); }
 </div>
 </section>
 
-<section id="issue-categories">
+<section id="categories" class="tab-content">
   <h2>3 · Issue Categories Breakdown</h2>
   <p>Themes have been grouped into eight high-level categories. Percentages
   are computed against the themed-ticket total (one ticket can match
@@ -441,7 +450,7 @@ blockquote footer strong { color: var(--navy); }
   </table>
 </section>
 
-<section id="repeated-issues"><h2>4 · Repeated Issues & Patterns</h2>
+<section id="repeated" class="tab-content"><h2>4 · Repeated Issues & Patterns</h2>
 <p>Below are the most frequently recurring patterns extracted from the dataset, each with example ticket IDs and the root cause where it can be inferred.</p>
 
 <h4>Lease / tenancy — 249 tickets</h4>
@@ -486,7 +495,7 @@ blockquote footer strong { color: var(--navy); }
 </div>
 <div><span class="chip">#18568</span> <span class="chip">#18810</span> <span class="chip">#18654</span></div>
 </section>
-<section id="critical-issues"><h2>5 · Top 10 Critical Issues</h2>
+<section id="critical" class="tab-content"><h2>5 · Top 10 Critical Issues</h2>
 <p>Ranked by <code>tickets × (100 − avg sentiment)</code> — high-volume or low-sentiment items rise to the top. A high rank here implies either a wide-blast-radius issue or a concentrated source of frustration (often both).</p>
 
 <div class="critical">
@@ -619,7 +628,7 @@ blockquote footer strong { color: var(--navy); }
   </div>
 </div>
 </section>
-<section id="top-services"><h2>6 · Top 5 Services Analysis</h2>
+<section id="services" class="tab-content"><h2>6 · Top 5 Services Analysis</h2>
 <p>The five services that received the largest share of real complaints in the period. For each, the dominant issue patterns and example ticket IDs are listed.</p>
 
 <h3>Lease — 319 tickets · 177 users</h3>
@@ -653,7 +662,7 @@ within this service:</p>
 <div>Example tickets: <span class="chip">#18573</span> <span class="chip">#18682</span> <span class="chip">#17900</span></div>
 </section>
 
-<section id="service-distribution">
+<section id="distribution" class="tab-content">
   <h2>7 · Service Distribution</h2>
   <p>Ticket count by service (top 12). The first three services account for
   a disproportionate share of the workload — they're the targets that yield
@@ -672,7 +681,7 @@ within this service:</p>
 <div class="bar-row"><div class="bar-label">POA Services</div><div class="bar-track"><div class="bar-fill" style="width:6.9%"></div></div><div class="bar-value">22</div></div>
 </section>
 
-<section id="recommendations"><h2>8 · Strategic Recommendations</h2>
+<section id="recs" class="tab-content"><h2>8 · Strategic Recommendations</h2>
 <p>Recommendations are ordered by the priority of the theme they address. Each links back to the pain point and ticket IDs in earlier sections.</p>
 
 <div class="rec">
@@ -796,7 +805,7 @@ within this service:</p>
   free-text descriptions.</p>
 
   <p class="muted" style="margin-top:1.2rem;">
-    Generated on 2026-05-18 13:44 ·
+    Generated on 2026-05-18 15:08 ·
     Source repo:
     <a href="https://github.com/ymedhatadres/accessrp-dashboard"
        style="color: var(--navy);">ymedhatadres/accessrp-dashboard</a>
@@ -804,5 +813,38 @@ within this service:</p>
 </div>
 
   </div>
+  <script>
+    (function () {
+      var btns = document.querySelectorAll('.tab-btn');
+      var panels = document.querySelectorAll('.tab-content');
+      function show(id) {
+        btns.forEach(function (b) {
+          b.classList.toggle('active', b.dataset.tab === id);
+        });
+        panels.forEach(function (p) {
+          p.classList.toggle('active', p.id === id);
+        });
+        // Scroll the activated tab button into view (mobile)
+        var active = document.querySelector('.tab-btn.active');
+        if (active && active.scrollIntoView) {
+          active.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: 'smooth' });
+        }
+        // Scroll page to top of section
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+      }
+      btns.forEach(function (b) {
+        b.addEventListener('click', function () {
+          var id = b.dataset.tab;
+          show(id);
+          history.replaceState(null, '', '#' + id);
+        });
+      });
+      // Open the tab named in the URL hash on first load, if any.
+      var hash = location.hash.replace('#', '');
+      if (hash && document.getElementById(hash)) {
+        show(hash);
+      }
+    })();
+  </script>
 </body>
 </html>
