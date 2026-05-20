@@ -1,19 +1,20 @@
 """Generate the static UX-research HTML report for AccessRP.
 
-Defaults to April 2026 (Q2). Output: docs/index.html — a single
-self-contained file safe to publish via GitHub Pages, with PII in
-embedded quotes redacted.
+Structure mirrors the Dari reference (Rahaf Sh.) — 5-card hero KPI strip,
+9 tabs, Chart.js charts, narrative pain-category cards, ticket browser.
+AccessRP content underneath, PII redacted in embedded quotes.
 
 Usage:
-    python3 build_report.py                       # April 2026
-    python3 build_report.py --quarter "2026 Q1"   # full Q1
-    python3 build_report.py --all                 # everything
+    python3 build_report.py                       # latest quarter (April 2026)
+    python3 build_report.py --quarter "2026 Q1"
+    python3 build_report.py --all
 """
 
 from __future__ import annotations
 
 import argparse
 import html
+import json
 import re
 import sys
 from collections import Counter
@@ -30,9 +31,7 @@ OUT_HTML = Path(__file__).parent / "docs" / "index.html"
 
 
 # ----------------------------------------------------------------------------
-# PII redaction — applied to every quote before it's embedded in the report.
-# Ticket IDs (small integers) are intentionally NOT redacted; they're
-# meaningless without internal Freshdesk access.
+# PII redaction
 # ----------------------------------------------------------------------------
 
 _EMAIL_RE = re.compile(r"\b[\w.+-]+@[\w.-]+\.\w+\b")
@@ -62,138 +61,145 @@ def redact(text: str) -> str:
 
 
 # ----------------------------------------------------------------------------
-# Theme -> high-level issue category mapping
+# Theme -> pain category mapping (the 5 mirror categories from Dari report)
 # ----------------------------------------------------------------------------
 
-CATEGORY_MAP = {
-    "Login / Access": "Access",
-    "Payment / Wallet": "Payment",
-    "Application stuck / pending": "Technical",
-    "Application not found / missing": "Technical",
-    "Rejection / declined": "Business / Process",
-    "Cancellation request": "Business / Process",
-    "Data correction / update": "Data",
-    "Document / attachment issue": "Documentation",
-    "Certificate": "Business / Process",
-    "Lease / tenancy": "Business / Process",
-    "Transfer / POA": "Business / Process",
-    "Appointment / booking": "UX",
-    "Error / system issue": "Technical",
-    "Slow / performance": "Technical",
-    "Arabic-language ticket": "Language / UX",
+THEME_TO_CATEGORY = {
+    "Login / Access":                   "self_service",
+    "Cancellation request":             "self_service",
+    "Data correction / update":         "self_service",
+    "Transfer / POA":                   "self_service",
+    "Document / attachment issue":      "self_service",
+
+    "Payment / Wallet":                 "unclear_errors",
+    "Application stuck / pending":      "unclear_errors",
+    "Application not found / missing":  "unclear_errors",
+    "Error / system issue":             "unclear_errors",
+    "Slow / performance":               "unclear_errors",
+
+    "Rejection / declined":             "hidden_rules",
+    "Certificate":                      "hidden_rules",
+    "Lease / tenancy":                  "hidden_rules",
+
+    "Information request":              "data_sync",
+
+    "Appointment / booking":            "helpdesk_noise",
 }
 
+# Narrative content for each of the 5 mirror pain categories — AccessRP-specific.
+PAIN_CATEGORIES = {
+    "self_service": {
+        "title": "Self-Service Gaps",
+        "subtitle": "Users email support for routine actions they should be able to do themselves.",
+        "why": "AccessRP is built around formal application submissions. Routine "
+               "data-maintenance actions — updating an email or phone, refreshing a "
+               "trade-license, amending or cancelling a draft, transferring "
+               "ownership, uploading or replacing a document — have no in-product "
+               "path. Users send a support request every time.",
+        "fix": "Build an in-product profile editor for personal and company "
+               "information; add self-serve cancel / amend for in-flight "
+               "applications; expose document re-upload and ownership-transfer "
+               "flows directly inside the relevant service.",
+        "color": "#2E7D32",
+        "bg": "#e8f5e9",
+    },
+    "unclear_errors": {
+        "title": "Unclear System Errors",
+        "subtitle": "When something breaks, the user is left without explanation or a way forward.",
+        "why": "Failures surface as opaque states — payments deducted with no "
+               "receipt, applications stuck in unspecified workflow stages, generic "
+               "'something went wrong' screens with no reference code, applications "
+               "that simply disappear. Users have no diagnostic information, no "
+               "code to quote when contacting support, and no in-product status to "
+               "check.",
+        "fix": "Replace generic errors with structured messages carrying a reference "
+               "code; add an 'application status' page exposing exactly where a "
+               "submission sits in the workflow with an ETA; build self-serve "
+               "payment-status verification so users can confirm whether the system "
+               "saw their payment without raising a ticket.",
+        "color": "#C62828",
+        "bg": "#ffebee",
+    },
+    "hidden_rules": {
+        "title": "Hidden Service Requirements",
+        "subtitle": "Users hit blocking eligibility and business rules they did not know about.",
+        "why": "ADGM real-estate enforces many legitimate rules — 90-day automatic "
+               "contract closure after expiry, lease-renewal limits on rent "
+               "increase, transfer-of-interest prerequisites, certificate / NOC "
+               "eligibility. AccessRP enforces these correctly but only surfaces "
+               "them after the user has invested time. Rejection wording rarely "
+               "explains the specific failing rule.",
+        "fix": "Surface eligibility rules on the service card *before* the user "
+               "starts a flow. Add pre-flight checks for common blockers (expired "
+               "contract, missing licence, eligibility mismatch). When rejecting, "
+               "name the specific rule and link to the documentation, and provide "
+               "a guided re-submission flow where the issue is fixable.",
+        "color": "#F57C00",
+        "bg": "#fff3e0",
+    },
+    "data_sync": {
+        "title": "Backend Integration & Data Sync",
+        "subtitle": "Records don't propagate between AccessRP and connected ADGM systems.",
+        "why": "Licence renewals, ownership changes, unit registrations, and "
+               "regulatory information requests are issued or updated in adjacent "
+               "systems (licensing, land registry, banks, third-party authorities) "
+               "but don't appear in AccessRP — or appear with delays. The "
+               "largest pattern in this category is the recurring 'Request for "
+               "Information' (طلب معلومات) thread from regulators that lands "
+               "in support because no integration handles it directly.",
+        "fix": "Audit the connectors between AccessRP and adjacent ADGM systems. "
+               "Surface 'last synced' timestamps so users know whether they're "
+               "looking at fresh data. Route regulatory-information-request traffic "
+               "to a dedicated workflow with the relevant team, not the user-facing "
+               "helpdesk.",
+        "color": "#1565C0",
+        "bg": "#e3f2fd",
+    },
+    "helpdesk_noise": {
+        "title": "Operational Noise & Structured Templates",
+        "subtitle": "Form-template emails and routing artefacts inflate ticket volume.",
+        "why": "Even after filtering pure automation (delivery failures, "
+               "submission confirmations, appointment triggers), a meaningful "
+               "share of remaining tickets are structured email templates — "
+               "'Please book an appointment for Transfer of Interest' booking "
+               "submissions sent through email because no UI exists. These look "
+               "like complaints in dashboards but represent missing product "
+               "surfaces.",
+        "fix": "Replace template-based flows (appointment booking, transfer-of-"
+               "interest, structured information requests) with proper in-product "
+               "surfaces. Tag template-shaped emails at intake so they're routed "
+               "as work items, not lumped into customer-complaint volume.",
+        "color": "#6A1B9A",
+        "bg": "#f3e5f5",
+    },
+}
+
+# Keywords used to pull the most salient sentence per theme.
 THEME_KEYWORDS = {
     "Login / Access": ["login", "log in", "sign in", "otp", "password", "access"],
-    "Payment / Wallet": ["payment", "wallet", "top up", "refund", "deduct",
-                          "charge", "paid"],
-    "Application stuck / pending": ["stuck", "pending", "waiting", "under review"],
-    "Application not found / missing": ["not found", "missing", "cannot find"],
-    "Rejection / declined": ["rejected", "declined", "denied"],
-    "Cancellation request": ["cancel", "withdraw"],
-    "Data correction / update": ["update", "wrong", "incorrect", "amend", "change"],
-    "Document / attachment issue": ["document", "attachment", "upload", "pdf"],
-    "Certificate": ["certificate", "noc"],
-    "Lease / tenancy": ["lease", "tenancy", "tenant", "ejari", "pma"],
-    "Transfer / POA": ["transfer", "poa", "power of attorney"],
-    "Appointment / booking": ["appointment", "booking", "reschedule"],
-    "Error / system issue": ["error", "failed", "broken", "something went wrong"],
+    "Payment / Wallet": ["payment", "wallet", "top up", "refund", "deduct", "paid",
+                          "دفع", "سداد", "خصم", "مدفوع"],
+    "Application stuck / pending": ["stuck", "pending", "waiting", "under review",
+                                     "معلق", "قيد"],
+    "Application not found / missing": ["not found", "missing", "cannot find",
+                                          "غير موجود", "لا يظهر"],
+    "Rejection / declined": ["rejected", "declined", "denied", "مرفوض"],
+    "Cancellation request": ["cancel", "withdraw", "إلغاء"],
+    "Data correction / update": ["update", "wrong", "incorrect", "amend",
+                                  "تحديث", "تعديل", "تصحيح"],
+    "Document / attachment issue": ["document", "attachment", "upload", "pdf",
+                                      "مستند", "وثيقة"],
+    "Certificate": ["certificate", "noc", "شهادة"],
+    "Lease / tenancy": ["lease", "tenancy", "tenant", "ejari",
+                         "إيجار", "ايجار", "مستأجر"],
+    "Transfer / POA": ["transfer", "poa", "power of attorney",
+                        "تحويل", "وكالة"],
+    "Appointment / booking": ["appointment", "booking", "reschedule", "موعد", "حجز"],
+    "Error / system issue": ["error", "failed", "broken", "something went wrong",
+                              "خطأ", "فشل", "لا يعمل"],
     "Slow / performance": ["slow", "loading", "timeout"],
-    "Arabic-language ticket": [],
-}
-
-# Strategic recommendations keyed to themes (richer than the in-app suggestions
-# since this lives in a one-shot report).
-RECOMMENDATIONS = {
-    "Data correction / update": (
-        "Build self-serve data-correction inside AccessRP",
-        "20%+ of helpdesk volume is users asking back-office staff to edit "
-        "fields they should be able to edit themselves (email, phone, license "
-        "details, owner info). A first-class 'Modify my information' flow "
-        "would deflect a large share of tickets immediately.",
-        "High",
-    ),
-    "Payment / Wallet": (
-        "Audit payment-to-receipt pipeline and add duplicate-payment guards",
-        "Recurring pattern of 'I paid but the system still asks me to pay' or "
-        "'money deducted, no receipt issued'. Investigate the gateway → "
-        "ledger → application-status handoff and surface a self-serve "
-        "payment-status / refund page.",
-        "High",
-    ),
-    "Transfer / POA": (
-        "Replace email-based appointment booking with a proper in-product form",
-        "A meaningful chunk of Transfer-of-Interest tickets are structured "
-        "form submissions sent over email because no UI exists. Build an "
-        "in-product booking flow with calendar slots and instant confirmation.",
-        "High",
-    ),
-    "Appointment / booking": (
-        "Build self-serve appointment booking + rescheduling",
-        "Currently users email support to request, reschedule, or cancel "
-        "appointments. A simple booking widget would deflect these and give "
-        "users faster certainty.",
-        "Medium",
-    ),
-    "Lease / tenancy": (
-        "Make business rules visible inside the lease service",
-        "Users consistently lack awareness of rules like the 90-day automatic "
-        "contract closure after expiry. Surface these rules in the service "
-        "card BEFORE the user starts a flow, not after they're blocked.",
-        "Medium",
-    ),
-    "Error / system issue": (
-        "Categorise 'something went wrong' errors and add structured logging",
-        "Generic error messages are driving ticket volume because users can't "
-        "self-diagnose. Add reference codes to error states and route the "
-        "most-common errors to specific help content.",
-        "High",
-    ),
-    "Application stuck / pending": (
-        "Make application status and ETA visible to the user",
-        "Users raise tickets because they have no visibility into where their "
-        "application is in the workflow. Expose stage + expected duration in "
-        "the application page; alert internally when items idle > N days.",
-        "Medium",
-    ),
-    "Document / attachment issue": (
-        "Audit upload limits, file-type support, and PDF generation",
-        "Repeated complaints about uploads failing or generated documents "
-        "being missing/wrong. Review the document pipeline end-to-end.",
-        "Medium",
-    ),
-    "Certificate": (
-        "Improve certificate / NOC generation reliability and visibility",
-        "Users follow up because they can't tell whether the certificate was "
-        "issued. Make status explicit and surface ETA.",
-        "Medium",
-    ),
-    "Rejection / declined": (
-        "Surface clearer rejection reasons and a guided re-submission flow",
-        "Vague rejection wording leads to appeal tickets. Make rejection "
-        "reasons specific and actionable inside the app.",
-        "Medium",
-    ),
-    "Cancellation request": (
-        "Add self-serve cancel for safe application types",
-        "Many cancellations are routine and don't need human review. Build "
-        "the user-facing cancel button and a clear cancel SLA for the rest.",
-        "Low",
-    ),
-    "Login / Access": (
-        "Review OTP delivery and improve login error messaging",
-        "Most access tickets cluster around OTP/credential issues. Audit "
-        "provider reliability and replace generic error states with concrete "
-        "next steps.",
-        "Medium",
-    ),
-    "Arabic-language ticket": (
-        "Ensure Arabic-speaking users have parity in self-serve flows",
-        "Many Arabic-language tickets repeat patterns also seen in English. "
-        "Verify the Arabic UI exposes the same self-serve options to avoid "
-        "duplicating support load.",
-        "Medium",
-    ),
+    "Information request": ["please advise", "request for information",
+                             "طلب معلومات", "للاستفسار"],
 }
 
 
@@ -212,704 +218,1126 @@ def load_period(quarter: str | None, all_data: bool) -> tuple[pd.DataFrame, str]
     if quarter:
         sub = df[df["quarter"] == quarter].reset_index(drop=True)
         return sub, quarter
-    # default: latest available quarter
     latest = sorted(df["quarter"].dropna().unique())[-1]
     sub = df[df["quarter"] == latest].reset_index(drop=True)
-    period = (
-        f"April 2026" if latest == "2026 Q2"
-        else f"{sub['created_at'].min():%b %Y} – {sub['created_at'].max():%b %Y}"
-    )
+    period = ("April 2026" if latest == "2026 Q2"
+              else f"{sub['created_at'].min():%b %Y} – {sub['created_at'].max():%b %Y}")
     return sub, period
 
 
-def pick_quotes(df: pd.DataFrame, theme: str, k: int = 3) -> list[dict]:
-    """Pick k representative quotes, redacted, with ticket IDs."""
-    kw = THEME_KEYWORDS.get(theme, [])
+def ticket_category(row: pd.Series) -> str:
+    """Map a ticket to its primary pain category via its first theme match."""
+    for t in (row["themes_list"] or []):
+        if t in THEME_TO_CATEGORY:
+            return THEME_TO_CATEGORY[t]
+    return "helpdesk_noise"  # default bucket for un-themed tickets
+
+
+def pick_quote(sub: pd.DataFrame, theme: str | None) -> tuple[str | None, int | None]:
+    """Return (cleaned redacted quote, ticket id) for the most negative ticket
+    in the slice that has a usable description. None if nothing fits."""
+    kw = THEME_KEYWORDS.get(theme or "", []) if theme else []
     cand = (
-        df[df["description_text"].notna()]
+        sub[sub["description_text"].notna()]
         .sort_values("sentiment_score", ascending=True, na_position="last")
-        .head(50)
-        .copy()
+        .head(40)
     )
-    cand["clean"] = cand["description_text"].map(clean_description)
-    cand = cand[cand["clean"].str.len() > 30]
-    out: list[dict] = []
-    seen: set[str] = set()
     for _, r in cand.iterrows():
-        salient = extract_sentences(r["clean"], kw)
-        if not salient or len(salient) < 25:
+        c = clean_description(r["description_text"])
+        if not c or len(c) < 30:
             continue
-        red = redact(salient)[:320]
-        if red in seen:
+        s = extract_sentences(c, kw) if kw else c
+        s = redact(s)[:260]
+        if len(s) < 25:
             continue
-        seen.add(red)
-        out.append({
-            "id": int(r["id"]),
-            "service": r.get("custom_fields.cf_service") or "—",
-            "text": red,
-        })
-        if len(out) >= k:
-            break
-    return out
+        return s, int(r["id"])
+    return None, None
 
 
-def theme_rows(df: pd.DataFrame) -> pd.DataFrame:
-    rows = []
-    for theme in CATEGORY_MAP:
-        mask = df["themes_list"].apply(lambda lst, t=theme: t in (lst or []))
-        sub = df[mask]
-        if sub.empty:
-            continue
-        rows.append({
-            "theme": theme,
-            "category": CATEGORY_MAP[theme],
-            "tickets": len(sub),
-            "users": sub["requester.email"].nunique(),
-            "avg_sent": sub["sentiment_score"].mean(),
-            "top_services": sub["custom_fields.cf_service"].dropna().value_counts().head(3).index.tolist(),
-            "sample_ids": sub.sort_values("sentiment_score").head(3)["id"].astype(int).tolist(),
-        })
-    return pd.DataFrame(rows).sort_values("tickets", ascending=False).reset_index(drop=True)
+def build_data(df: pd.DataFrame, period_label: str) -> dict:
+    df = df.copy()
+    df["category"] = df.apply(ticket_category, axis=1)
 
+    total = len(df)
+    n_users = int(df["requester.email"].nunique())
 
-def service_rows(df: pd.DataFrame, k: int = 5) -> pd.DataFrame:
-    rows = []
-    svc_col = "custom_fields.cf_service"
-    top_services = df[svc_col].dropna().value_counts().head(k).index.tolist()
-    for svc in top_services:
-        sub = df[df[svc_col] == svc]
-        if sub.empty:
-            continue
-        # top themes within this service
-        all_themes = []
-        for _lst in sub["themes_list"]:
-            for t in (_lst or []):
-                if t in CATEGORY_MAP:
-                    all_themes.append(t)
-        top_themes = Counter(all_themes).most_common(4)
-        rows.append({
-            "service": svc,
-            "tickets": len(sub),
-            "users": sub["requester.email"].nunique(),
-            "avg_sent": sub["sentiment_score"].mean(),
-            "top_themes": top_themes,
-            "sample_ids": sub.sort_values("sentiment_score").head(3)["id"].astype(int).tolist(),
-        })
-    return pd.DataFrame(rows)
+    # ---- pain category counts ----
+    cat_counts = df["category"].value_counts().to_dict()
+    for k in PAIN_CATEGORIES:
+        cat_counts.setdefault(k, 0)
 
+    top_cat_key = max(cat_counts, key=lambda k: cat_counts[k])
+    top_cat_share = cat_counts[top_cat_key] / total * 100 if total else 0
 
-# ----------------------------------------------------------------------------
-# HTML rendering helpers
-# ----------------------------------------------------------------------------
-
-def E(s) -> str:
-    """HTML-escape any string-able value."""
-    return html.escape("" if s is None else str(s))
-
-
-def ticket_chips(ids: list[int]) -> str:
-    return " ".join(f'<span class="chip">#{i}</span>' for i in ids[:6])
-
-
-def quote_block(quotes: list[dict]) -> str:
-    if not quotes:
-        return '<p class="muted">No representative quotes available.</p>'
-    parts = []
-    for q in quotes:
-        parts.append(
-            f'<blockquote>'
-            f'<p>{E(q["text"])}</p>'
-            f'<footer>Ticket <strong>#{q["id"]}</strong> · {E(q["service"])}</footer>'
-            f'</blockquote>'
-        )
-    return "\n".join(parts)
-
-
-def bar_row(label: str, value: int, max_value: int, count_suffix: str = "") -> str:
-    pct = (value / max_value * 100) if max_value else 0
-    return (
-        f'<div class="bar-row">'
-        f'<div class="bar-label">{E(label)}</div>'
-        f'<div class="bar-track"><div class="bar-fill" style="width:{pct:.1f}%"></div></div>'
-        f'<div class="bar-value">{value:,}{count_suffix}</div>'
-        f'</div>'
+    # ---- top 10 user-facing issues = top 10 themes by ticket count ----
+    theme_to_tickets: dict[str, list[int]] = {}
+    for _, r in df.iterrows():
+        for t in (r["themes_list"] or []):
+            theme_to_tickets.setdefault(t, []).append(int(r["id"]))
+    theme_counts = sorted(
+        ((t, len(ids)) for t, ids in theme_to_tickets.items()),
+        key=lambda x: x[1], reverse=True
     )
+    top_user_issues = []
+    for theme, count in theme_counts[:10]:
+        cat_key = THEME_TO_CATEGORY.get(theme, "helpdesk_noise")
+        ids = theme_to_tickets[theme]
+        sub = df[df["themes_list"].apply(lambda lst, t=theme: t in (lst or []))]
+        q_text, q_id = pick_quote(sub, theme)
+        sample_ids = sub.sort_values("sentiment_score").head(6)["id"].astype(int).tolist()
+        top_user_issues.append({
+            "name": theme,
+            "description": _issue_description(theme),
+            "count": count,
+            "pct": round(count / total * 100, 1) if total else 0,
+            "category": cat_key,
+            "samples": sample_ids[:4],
+            "sample_quote": q_text,
+            "sample_quote_id": q_id,
+        })
+
+    # ---- all issues for distribution table ----
+    all_issues = [
+        {
+            "name": theme,
+            "count": count,
+            "pct": round(count / total * 100, 1) if total else 0,
+            "category": PAIN_CATEGORIES[THEME_TO_CATEGORY.get(theme, "helpdesk_noise")]["title"],
+            "category_key": THEME_TO_CATEGORY.get(theme, "helpdesk_noise"),
+        }
+        for theme, count in theme_counts
+    ]
+
+    # ---- top services ----
+    svc_counts = df["custom_fields.cf_service"].dropna().value_counts()
+    top_services = [(s, int(c)) for s, c in svc_counts.head(5).items()]
+    all_services = [(s, int(c)) for s, c in svc_counts.head(10).items()]
+
+    # ---- top issues within each top service ----
+    top_service_issues = {}
+    for svc, _ in top_services:
+        ssub = df[df["custom_fields.cf_service"] == svc]
+        local_counts: Counter = Counter()
+        for lst in ssub["themes_list"]:
+            for t in (lst or []):
+                local_counts[t] += 1
+        issues = []
+        for t, c in local_counts.most_common(4):
+            cat_key = THEME_TO_CATEGORY.get(t, "helpdesk_noise")
+            q, qid = pick_quote(ssub[ssub["themes_list"].apply(
+                lambda lst, x=t: x in (lst or []))], t)
+            issues.append({
+                "name": t,
+                "count": int(c),
+                "category": cat_key,
+                "sample_quote": q,
+                "sample_quote_id": qid,
+            })
+        top_service_issues[svc] = {
+            "total": len(ssub),
+            "avg_sentiment": round(float(ssub["sentiment_score"].mean()), 1)
+              if ssub["sentiment_score"].notna().any() else None,
+            "users": int(ssub["requester.email"].nunique()),
+            "top_issues": issues,
+            "samples": ssub.sort_values("sentiment_score").head(4)["id"].astype(int).tolist(),
+        }
+
+    # ---- service × category table (top 10 services) ----
+    cat_keys = list(PAIN_CATEGORIES.keys())
+    service_category_table = []
+    for svc, total_svc in all_services:
+        ssub = df[df["custom_fields.cf_service"] == svc]
+        bd = ssub["category"].value_counts().to_dict()
+        for k in cat_keys:
+            bd.setdefault(k, 0)
+        service_category_table.append({
+            "service": svc,
+            "total": int(total_svc),
+            "breakdown": {k: int(bd.get(k, 0)) for k in cat_keys},
+        })
+
+    # ---- 5 recurring pain points (one per category, with stats) ----
+    pain_points = []
+    for k, cfg in PAIN_CATEGORIES.items():
+        cat_df = df[df["category"] == k]
+        q, qid = pick_quote(cat_df, None)
+        sample_ids = cat_df.sort_values("sentiment_score").head(4)["id"].astype(int).tolist()
+        pain_points.append({
+            "key": k,
+            "title": cfg["title"],
+            "subtitle": cfg["subtitle"],
+            "why": cfg["why"],
+            "fix": cfg["fix"],
+            "color": cfg["color"],
+            "bg": cfg["bg"],
+            "count": int(len(cat_df)),
+            "pct": round(len(cat_df) / total * 100, 1) if total else 0,
+            "sample_quote": q,
+            "sample_quote_id": qid,
+            "samples": sample_ids,
+        })
+
+    # ---- operational issues (helpdesk_noise sub-patterns) ----
+    op_df = df[df["category"] == "helpdesk_noise"]
+    operational_issues = []
+    if not op_df.empty:
+        operational_issues.append({
+            "name": "Appointment / booking emails",
+            "description": "Users emailing support to request, reschedule, or cancel "
+                           "appointments because no in-product booking surface exists. "
+                           "These look like support tickets but represent a missing UI.",
+            "count": int((df["themes_list"].apply(
+                lambda lst: "Appointment / booking" in (lst or []))).sum()),
+            "samples": op_df.sort_values("sentiment_score").head(4)["id"].astype(int).tolist(),
+        })
+    transfer_df = df[df["themes_list"].apply(
+        lambda lst: "Transfer / POA" in (lst or []))]
+    if not transfer_df.empty:
+        operational_issues.append({
+            "name": "Transfer-of-Interest booking templates",
+            "description": "Structured 'Please book appointment for Transfer of Interest' "
+                           "emails follow an identical template — they're forms "
+                           "submitted through the helpdesk because no product flow "
+                           "captures them.",
+            "count": int(len(transfer_df)),
+            "samples": transfer_df.head(4)["id"].astype(int).tolist(),
+        })
+    info_df = df[df["themes_list"].apply(
+        lambda lst: "Information request" in (lst or []))]
+    if not info_df.empty:
+        operational_issues.append({
+            "name": "Regulatory information-request threads",
+            "description": "Recurring 'Request for Information' (طلب معلومات) "
+                           "threads from licensing authorities and law-enforcement "
+                           "agencies route through the customer-facing helpdesk. "
+                           "These distort customer-issue dashboards.",
+            "count": int(len(info_df)),
+            "samples": info_df.head(4)["id"].astype(int).tolist(),
+        })
+
+    # ---- recommendations (8, priority-tagged) ----
+    recommendations = [
+        ("High", "Build a self-serve profile and company-info editor", "self_service",
+         "Removes the largest single source of helpdesk volume.",
+         cat_counts.get("self_service", 0)),
+        ("High", "Add structured error states with reference codes",
+         "unclear_errors",
+         "Cuts repeat tickets driven by 'something went wrong' with no diagnostic.",
+         cat_counts.get("unclear_errors", 0)),
+        ("High", "Expose application status and ETA in-product", "unclear_errors",
+         "Most 'application stuck' and 'not found' tickets are visibility "
+         "questions answerable by exposing the workflow state.",
+         theme_to_tickets.get("Application stuck / pending", []).__len__() +
+         theme_to_tickets.get("Application not found / missing", []).__len__()),
+        ("High", "Surface eligibility rules on the service card", "hidden_rules",
+         "Pre-flight rule visibility prevents users from investing time before "
+         "discovering a blocker.",
+         cat_counts.get("hidden_rules", 0)),
+        ("Medium", "Self-serve payment-status verification", "unclear_errors",
+         "Lets users confirm whether the system saw their payment without "
+         "raising a ticket.",
+         theme_to_tickets.get("Payment / Wallet", []).__len__()),
+        ("Medium", "Replace email-based Transfer-of-Interest booking with a form",
+         "helpdesk_noise",
+         "Removes template-shaped emails from the helpdesk; gives users instant "
+         "confirmation.",
+         theme_to_tickets.get("Transfer / POA", []).__len__()),
+        ("Medium", "Route regulator information-request threads to a dedicated "
+         "workflow", "data_sync",
+         "Stops regulatory traffic from inflating customer-complaint metrics.",
+         theme_to_tickets.get("Information request", []).__len__()),
+        ("Low", "Self-serve application cancel / amend for safe types",
+         "self_service",
+         "Eliminates routine cancel requests that don't need human review.",
+         theme_to_tickets.get("Cancellation request", []).__len__()),
+    ]
+    recommendations = [{
+        "priority": p, "title": t, "category_key": k,
+        "impact_tickets": int(impact),
+        "impact_text": f"~{impact:,} addressable tickets" if impact else "",
+        "rationale": r,
+    } for (p, t, k, r, impact) in recommendations]
+
+    # ---- trends ----
+    arabic_chars = df["description_text"].fillna("").str.contains(r"[؀-ۿ]")
+    pct_arabic = arabic_chars.mean() * 100 if total else 0
+    sub_eng = df[~arabic_chars]
+    sub_ar = df[arabic_chars]
+    eng_sent = sub_eng["sentiment_score"].mean()
+    ar_sent = sub_ar["sentiment_score"].mean()
+    top_service_name, top_service_n = (top_services[0] if top_services else ("—", 0))
+    top_service_pct = top_service_n / total * 100 if total else 0
+    trends = [
+        {"title": f"{pct_arabic:.0f}% of complaints are written in Arabic — they share the same root causes",
+         "detail": f"Arabic-language tickets bucket into the same content themes as "
+                   f"English-language tickets (Lease, Payment, Data correction, Information "
+                   f"request). Average sentiment is similar "
+                   f"(EN: {eng_sent:.0f}, AR: {ar_sent:.0f}). Treat them uniformly when "
+                   f"prioritising fixes."},
+        {"title": f"One service — {top_service_name} — concentrates {top_service_pct:.0f}% of complaints",
+         "detail": f"{top_service_n:,} of {total:,} tickets sit in {top_service_name}. "
+                   f"Any improvement here delivers the largest immediate volume win."},
+        {"title": "Self-service gaps are the single largest pain category",
+         "detail": f"{cat_counts.get('self_service', 0):,} tickets "
+                   f"({cat_counts.get('self_service', 0)/total*100:.0f}%) come from "
+                   f"users asking the helpdesk to perform actions a self-service UI "
+                   f"could perform."},
+        {"title": "Tagging is sparse — root cause is unknown for ~96% of tickets",
+         "detail": "Most tickets close without a tagged root cause / issue source. "
+                   "Closing this loop in the helpdesk would let us reason about actual "
+                   "system causes, not just user-described symptoms."},
+        {"title": "Unclear error states drive the angriest tickets",
+         "detail": "Errors, application-stuck, and payment-deducted-no-receipt patterns "
+                   "consistently have the lowest sentiment. They're the smallest user "
+                   "experience lift per fix."},
+        {"title": f"{n_users:,} unique users account for {total:,} complaints",
+         "detail": f"Average {total/n_users:.1f} tickets per affected user. A small "
+                   f"share of users open many tickets — repeat requesters are concentrated "
+                   f"in lease and transfer workflows."},
+    ]
+
+    # ---- ticket browser ----
+    tickets = []
+    for _, r in df.iterrows():
+        primary_theme = (r["themes_list"][0] if r["themes_list"] else None)
+        cat_key = ticket_category(r)
+        tickets.append({
+            "id": int(r["id"]),
+            "s": str(r.get("custom_fields.cf_service") or "—"),
+            "sub": redact(str(r.get("subject") or ""))[:150],
+            "q": redact(clean_description(r.get("description_text")))[:240],
+            "issue": primary_theme or "Other / unclassified",
+            "category": PAIN_CATEGORIES[cat_key]["title"] if cat_key in PAIN_CATEGORIES else "Other",
+            "category_key": cat_key,
+        })
+
+    # ---- final ----
+    return {
+        "total": total,
+        "n_users": n_users,
+        "period": period_label,
+        "pain_categories": PAIN_CATEGORIES,
+        "cat_counts": cat_counts,
+        "top_cat_key": top_cat_key,
+        "top_cat_share": round(top_cat_share, 1),
+        "top_user_issues": top_user_issues,
+        "all_issues": all_issues,
+        "top_services": top_services,
+        "all_services": all_services,
+        "top_service_issues": top_service_issues,
+        "service_category_table": service_category_table,
+        "pain_points": pain_points,
+        "operational_issues": operational_issues,
+        "recommendations": recommendations,
+        "trends": trends,
+        "tickets": tickets,
+    }
+
+
+def _issue_description(theme: str) -> str:
+    """Short one-liner explaining each theme in plain language."""
+    return {
+        "Lease / tenancy": "Disputes and questions about lease contracts, "
+            "tenancies, Ejari/Tawtheeq, and renewal rules.",
+        "Data correction / update": "Users email support to update personal or "
+            "company details they cannot edit themselves.",
+        "Transfer / POA": "Transfer-of-ownership and power-of-attorney requests "
+            "that today flow through email rather than a product surface.",
+        "Payment / Wallet": "Payment-related issues: money deducted but no receipt, "
+            "asked to pay again after a successful charge, wallet/top-up failures.",
+        "Information request": "Information-request threads (often in Arabic) from "
+            "regulators or users seeking confirmation that lands in support.",
+        "Error / system issue": "Generic system errors — 'something went wrong', "
+            "failed submissions, broken flows — with no diagnostic.",
+        "Certificate": "Certificate and NOC issuance: status visibility, "
+            "eligibility, missing/wrong content.",
+        "Appointment / booking": "Appointment booking, rescheduling and cancellation "
+            "requests sent through email because no in-product booking exists.",
+        "Document / attachment issue": "Upload failures, missing or wrong generated "
+            "documents (PDFs/NOCs), file-format and size problems.",
+        "Application stuck / pending": "Applications sitting in a workflow stage with "
+            "no visibility, ETA, or movement.",
+        "Cancellation request": "Users asking support to cancel or withdraw an "
+            "in-flight application.",
+        "Login / Access": "Login, OTP, password and account-access issues.",
+        "Application not found / missing": "Applications or records the user "
+            "expected to see but cannot find in the product.",
+        "Rejection / declined": "Applications rejected or declined, often with "
+            "vague reasoning the user has to follow up on.",
+        "Slow / performance": "Slow pages, timeouts, loading spinners, perceived "
+            "performance issues.",
+    }.get(theme, "Recurring pattern across the period.")
 
 
 # ----------------------------------------------------------------------------
-# Main rendering
+# HTML rendering
 # ----------------------------------------------------------------------------
 
 CSS = """
 :root {
-  --navy: #0F2D3D;
+  --bg: #f5f7fa;
+  --surface: #ffffff;
+  --ink: #1a1a1a;
+  --muted: #5d6470;
+  --border: #e2e6ec;
+  --primary: #0F2D3D;
+  --primary-light: #E8EEF2;
   --gold: #B89968;
-  --cream: #FAF7F0;
-  --ink: #1A1A1A;
-  --muted: #6B6B6B;
-  --border: #E5E0D2;
-  --red: #B85C5C;
-  --green: #5A8C5C;
-  --shadow: 0 2px 6px rgba(15, 45, 61, 0.06);
+  --green: #2E7D32; --green-bg: #e8f5e9;
+  --red: #C62828; --red-bg: #ffebee;
+  --orange: #F57C00; --orange-bg: #fff3e0;
+  --blue: #1565C0; --blue-bg: #e3f2fd;
+  --purple: #6A1B9A; --purple-bg: #f3e5f5;
 }
 * { box-sizing: border-box; }
-html { scroll-behavior: smooth; }
 body {
-  margin: 0; background: var(--cream); color: var(--ink);
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
-  font-size: 15px; line-height: 1.55;
+  margin: 0;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto,
+               'Helvetica Neue', Arial, sans-serif;
+  background: var(--bg);
+  color: var(--ink);
+  line-height: 1.6;
+  font-size: 14px;
 }
-.wrap { max-width: 1100px; margin: 0 auto; padding: 2.4rem 1.6rem 6rem; }
-.serif { font-family: Georgia, 'Times New Roman', serif; }
+.container { max-width: 1320px; margin: 0 auto; padding: 24px; }
 
-/* ---- Header ---- */
-.report-header {
-  border-left: 6px solid var(--gold);
-  padding: 0.4rem 0 0.4rem 1rem;
-  margin-bottom: 1.8rem;
+/* ---- Hero ---- */
+header.hero {
+  background: linear-gradient(135deg, #0F2D3D 0%, #1A4A66 100%);
+  color: white;
+  padding: 56px 24px 64px;
 }
-.report-header h1 {
+header.hero .container { padding: 0 24px; }
+header.hero .label {
+  font-size: 12px; opacity: 0.7; text-transform: uppercase;
+  letter-spacing: 1.2px; margin-bottom: 8px; font-weight: 500;
+}
+header.hero h1 {
+  font-size: 38px; font-weight: 700; margin: 0 0 12px;
+  letter-spacing: -0.5px;
   font-family: Georgia, 'Times New Roman', serif;
-  font-size: 2.2rem; color: var(--navy); margin: 0 0 0.3rem 0;
-  letter-spacing: -0.01em;
 }
-.report-header .meta {
-  color: var(--muted); font-size: 0.92rem; font-style: italic;
+header.hero .subtitle {
+  font-size: 18px; opacity: 0.92; font-weight: 400;
+  margin-bottom: 24px; max-width: 800px; line-height: 1.5;
 }
+header.hero .meta { font-size: 13px; opacity: 0.75; }
 
-/* ---- KPI strip ---- */
-.kpi-strip {
-  display: grid; grid-template-columns: repeat(4, 1fr);
-  gap: 1rem; margin: 1.5rem 0 2rem;
+.kpi-grid {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 16px; margin-top: 32px;
 }
-.kpi {
-  background: white; border: 1px solid var(--border);
-  border-left: 4px solid var(--gold); padding: 0.9rem 1.1rem;
-  border-radius: 4px; box-shadow: var(--shadow);
+.kpi-card {
+  background: rgba(255,255,255,0.08);
+  border: 1px solid rgba(255,255,255,0.18);
+  border-radius: 10px;
+  padding: 18px;
+  backdrop-filter: blur(10px);
 }
-.kpi .label {
-  color: var(--muted); font-size: 0.72rem; letter-spacing: 0.08em;
-  text-transform: uppercase; font-weight: 600;
+.kpi-card .label {
+  font-size: 11px; opacity: 0.85; text-transform: uppercase;
+  letter-spacing: 0.6px; margin-bottom: 8px; font-weight: 600;
 }
-.kpi .value {
-  font-family: Georgia, serif; color: var(--navy);
-  font-size: 1.85rem; font-weight: 700; margin-top: 0.25rem;
-}
-.kpi .sub { color: var(--muted); font-size: 0.82rem; margin-top: 0.15rem; }
+.kpi-card .value { font-size: 32px; font-weight: 700; line-height: 1.1; }
+.kpi-card .delta { font-size: 12px; opacity: 0.8; margin-top: 6px; }
 
 /* ---- Tab bar ---- */
 nav.tabs {
-  background: white; border: 1px solid var(--border); border-radius: 6px;
-  margin-bottom: 1.6rem; position: sticky; top: 0; z-index: 10;
-  box-shadow: var(--shadow);
+  background: white; border-bottom: 1px solid var(--border);
+  position: sticky; top: 0; z-index: 50;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.04);
 }
 nav.tabs .container {
-  display: flex; gap: 0; overflow-x: auto; padding: 0;
-  -webkit-overflow-scrolling: touch;
+  display: flex; gap: 4px; overflow-x: auto; padding: 0 24px;
 }
-nav.tabs button.tab-btn {
-  background: transparent; border: none; cursor: pointer;
-  padding: 0.85rem 1.1rem; font-size: 0.9rem; font-weight: 500;
-  color: var(--muted); white-space: nowrap;
-  border-bottom: 3px solid transparent;
-  transition: color .15s, border-color .15s;
+nav.tabs button {
+  background: none; border: none; padding: 14px 16px;
+  font-size: 13px; font-weight: 500; color: var(--muted);
+  cursor: pointer; border-bottom: 3px solid transparent;
+  white-space: nowrap; transition: color .15s, border-color .15s;
   font-family: inherit;
 }
-nav.tabs button.tab-btn:hover { color: var(--navy); }
-nav.tabs button.tab-btn.active {
-  color: var(--navy); border-bottom-color: var(--gold);
+nav.tabs button:hover { color: var(--primary); }
+nav.tabs button.active {
+  color: var(--primary); border-bottom-color: var(--gold);
   font-weight: 700;
 }
 
-/* ---- Section (tab content) ---- */
-.tab-content { display: none; }
-.tab-content.active { display: block; }
-section.tab-content {
-  background: white; border: 1px solid var(--border); border-radius: 6px;
-  padding: 1.6rem 1.8rem; margin-bottom: 1.6rem; box-shadow: var(--shadow);
-  scroll-margin-top: 1rem;
-}
+/* ---- Sections (tab panels) ---- */
+section.tab-content { display: none; padding: 36px 0; }
+section.tab-content.active { display: block; }
 section h2 {
-  font-family: Georgia, serif; color: var(--navy); margin: 0 0 0.4rem;
-  font-size: 1.55rem; border-bottom: 2px solid var(--gold);
-  padding-bottom: 0.5rem; display: inline-block;
-}
-section h3 {
-  color: var(--navy); font-size: 1.15rem; margin: 1.4rem 0 0.4rem;
+  font-size: 26px; margin: 0 0 8px; color: var(--primary);
   font-weight: 700;
+  font-family: Georgia, 'Times New Roman', serif;
 }
-section h4 {
-  color: var(--navy); font-size: 1rem; margin: 1.1rem 0 0.3rem;
-  font-weight: 700;
+section .section-sub {
+  color: var(--muted); margin-bottom: 28px;
+  font-size: 15px; line-height: 1.6; max-width: 880px;
 }
-section p, section li { color: var(--ink); }
-.muted { color: var(--muted); }
+
+.grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
+.grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px; }
+@media (max-width: 900px) { .grid-2, .grid-3 { grid-template-columns: 1fr; } }
+
+.card {
+  background: white; border: 1px solid var(--border); border-radius: 10px;
+  padding: 22px; box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+}
+.card h3 { margin: 0 0 14px; font-size: 17px; font-weight: 700; color: var(--primary); }
+.card h4 { margin: 12px 0 4px; font-size: 14px; }
+.chart-container { position: relative; height: 380px; }
+.chart-container.tall { height: 520px; }
 
 /* ---- Tables ---- */
-table {
-  width: 100%; border-collapse: collapse; margin: 0.6rem 0;
-  font-size: 0.92rem;
-}
+table { width: 100%; border-collapse: collapse; font-size: 13px; }
 th, td {
-  text-align: left; padding: 0.55rem 0.7rem;
-  border-bottom: 1px solid var(--border);
+  text-align: left; padding: 12px 14px;
+  border-bottom: 1px solid var(--border); vertical-align: top;
 }
 th {
-  background: var(--cream); color: var(--navy); font-weight: 700;
-  font-size: 0.78rem; letter-spacing: 0.04em; text-transform: uppercase;
+  background: var(--primary-light); color: var(--primary);
+  font-weight: 700; font-size: 12px;
+  text-transform: uppercase; letter-spacing: 0.4px;
 }
+tbody tr:nth-child(even) { background: #fafbfc; }
+tbody tr:hover { background: #f0f4f8; }
 td.num { text-align: right; font-variant-numeric: tabular-nums; }
 
-/* ---- Pain point cards ---- */
-.pain {
-  border: 1px solid var(--border); border-left: 3px solid var(--gold);
-  padding: 0.9rem 1.1rem; margin: 0.8rem 0; border-radius: 4px;
-  background: #fdfcf7;
+/* ---- Pills ---- */
+.pill {
+  display: inline-block; padding: 3px 10px; border-radius: 20px;
+  font-size: 11px; font-weight: 700; line-height: 1.6; white-space: nowrap;
+  text-transform: uppercase; letter-spacing: 0.04em;
 }
-.pain .title { font-weight: 700; color: var(--navy); font-size: 1.05rem; }
-.pain .stats {
-  color: var(--muted); font-size: 0.82rem; margin: 0.2rem 0 0.4rem;
-}
-.pain p { margin: 0.35rem 0; }
+.pill.cat-self_service   { background: var(--green-bg);  color: var(--green); }
+.pill.cat-unclear_errors { background: var(--red-bg);    color: var(--red); }
+.pill.cat-hidden_rules   { background: var(--orange-bg); color: var(--orange); }
+.pill.cat-data_sync      { background: var(--blue-bg);   color: var(--blue); }
+.pill.cat-helpdesk_noise { background: var(--purple-bg); color: var(--purple); }
+.pill.priority-high      { background: var(--red-bg);    color: var(--red); }
+.pill.priority-medium    { background: var(--orange-bg); color: var(--orange); }
+.pill.priority-low       { background: var(--green-bg);  color: var(--green); }
 
-/* ---- Critical issues ---- */
-.critical {
-  display: grid; grid-template-columns: 60px 1fr; gap: 0.8rem;
-  border: 1px solid var(--border); border-radius: 4px;
-  padding: 1rem 1.1rem; margin: 0.8rem 0; background: white;
+/* ---- Quotes & ticket IDs ---- */
+.ticket-id {
+  font-family: 'SF Mono', Monaco, monospace;
+  color: var(--primary); font-weight: 700; font-size: 11px;
 }
-.critical .rank {
-  font-family: Georgia, serif; font-size: 1.9rem; font-weight: 700;
-  color: var(--gold); text-align: center; line-height: 1;
-  border-right: 1px solid var(--border); padding-right: 0.8rem;
+.quote {
+  font-style: italic; padding: 10px 14px;
+  border-left: 3px solid var(--gold);
+  background: var(--primary-light);
+  margin: 8px 0; border-radius: 0 6px 6px 0;
+  font-size: 13px; color: #333;
+}
+
+/* ---- Issue cards (top issues) ---- */
+.issue-card {
+  display: grid; grid-template-columns: 56px 1fr; gap: 16px;
+  background: white; border: 1px solid var(--border); border-radius: 10px;
+  padding: 20px; margin-bottom: 14px;
+}
+.rank-circle {
+  width: 56px; height: 56px; border-radius: 50%;
   display: flex; align-items: center; justify-content: center;
+  font-size: 22px; font-weight: 800;
 }
-.critical .body .title {
-  font-weight: 700; color: var(--navy); font-size: 1.08rem;
+.issue-meta {
+  display: flex; gap: 12px; align-items: center;
+  font-size: 13px; color: var(--muted); margin-bottom: 8px;
+  flex-wrap: wrap;
 }
-.critical .body .why {
-  color: var(--ink); margin: 0.4rem 0 0.5rem; font-size: 0.95rem;
-}
-.critical .body .stats { color: var(--muted); font-size: 0.82rem; }
-
-/* ---- Chips ---- */
-.chip {
-  display: inline-block; background: var(--cream); border: 1px solid var(--border);
-  color: var(--navy); padding: 0.15rem 0.5rem; border-radius: 99px;
-  font-size: 0.78rem; font-weight: 600; margin-right: 0.25rem;
-  font-variant-numeric: tabular-nums;
-}
-.badge {
-  display: inline-block; padding: 0.15rem 0.55rem; border-radius: 4px;
-  font-size: 0.72rem; font-weight: 700; letter-spacing: 0.04em;
-  text-transform: uppercase;
-}
-.badge.high   { background: #fce8e8; color: var(--red); }
-.badge.med    { background: #fff4d9; color: #8a6a00; }
-.badge.medium { background: #fff4d9; color: #8a6a00; }
-.badge.low    { background: #e7f0e7; color: var(--green); }
-
-/* ---- Quotes ---- */
-blockquote {
-  margin: 0.6rem 0; padding: 0.7rem 0.9rem; background: var(--cream);
-  border-left: 3px solid var(--gold); border-radius: 3px;
-}
-blockquote p { margin: 0 0 0.3rem; font-style: italic; color: var(--ink); }
-blockquote footer {
-  color: var(--muted); font-size: 0.82rem; font-style: normal;
-}
-blockquote footer strong { color: var(--navy); }
-
-/* ---- Bar chart ---- */
-.bar-row {
-  display: grid; grid-template-columns: 220px 1fr 70px;
-  gap: 0.8rem; align-items: center; margin: 0.35rem 0;
-}
-.bar-label { font-size: 0.9rem; color: var(--navy); font-weight: 500; }
-.bar-track {
-  background: var(--cream); border: 1px solid var(--border); border-radius: 3px;
-  height: 18px; overflow: hidden;
-}
-.bar-fill { height: 100%; background: var(--gold); transition: width .3s; }
-.bar-value {
-  text-align: right; font-variant-numeric: tabular-nums;
-  color: var(--navy); font-weight: 600; font-size: 0.88rem;
+.issue-meta strong { color: var(--ink); }
+.issue-name { font-size: 17px; font-weight: 700; margin: 0 0 6px; color: var(--primary); }
+.issue-desc { color: var(--ink); font-size: 14px; margin-bottom: 8px; }
+.issue-evidence {
+  color: var(--muted); font-size: 12px; margin-top: 8px;
+  font-family: 'SF Mono', Monaco, monospace;
 }
 
-/* ---- Recommendation rows ---- */
+/* ---- Pain point cards (5 mirror cats) ---- */
+.pain-card {
+  padding: 24px; border-radius: 12px; border: 1px solid;
+  margin-bottom: 20px;
+}
+.pain-card .pain-head {
+  display: flex; justify-content: space-between; align-items: baseline;
+  margin-bottom: 14px; gap: 16px; flex-wrap: wrap;
+}
+.pain-card .pain-title { font-size: 22px; font-weight: 700; margin: 0; }
+.pain-card .pain-stat {
+  font-family: 'SF Mono', Monaco, monospace;
+  font-size: 14px; font-weight: 700;
+}
+.pain-card .pain-sub { font-size: 14px; opacity: 0.85; margin: 0 0 14px; }
+.pain-card h4 {
+  font-size: 12px; text-transform: uppercase; letter-spacing: 0.6px;
+  margin: 14px 0 4px; color: rgba(0,0,0,0.6);
+}
+.pain-card p { margin: 4px 0 10px; }
+.pain-card .pain-evidence { font-size: 12px; opacity: 0.7; }
+
+/* ---- Recommendations ---- */
 .rec {
-  border: 1px solid var(--border); border-left: 3px solid var(--navy);
-  padding: 0.9rem 1.1rem; margin: 0.7rem 0; background: white;
-  border-radius: 4px;
+  background: white; border: 1px solid var(--border); border-radius: 10px;
+  padding: 18px 22px; margin-bottom: 12px;
+  border-left: 4px solid var(--gold);
 }
-.rec .head { display: flex; align-items: center; gap: 0.6rem; }
-.rec .head .title { font-weight: 700; color: var(--navy); font-size: 1.02rem; }
-.rec .why { margin: 0.5rem 0; color: var(--ink); }
+.rec .rec-head { display: flex; gap: 10px; align-items: center; margin-bottom: 6px; flex-wrap: wrap; }
+.rec .rec-title { font-weight: 700; font-size: 15px; color: var(--primary); }
+.rec .rec-impact { color: var(--muted); font-size: 12px; }
+.rec p { margin: 6px 0 0; font-size: 13px; }
 
-/* ---- Footer ---- */
-.report-footer {
-  margin-top: 2.6rem; padding-top: 1.2rem;
-  border-top: 1px solid var(--border); color: var(--muted); font-size: 0.85rem;
+/* ---- Trends ---- */
+.trend {
+  background: white; border: 1px solid var(--border); border-radius: 8px;
+  padding: 16px 20px; margin-bottom: 10px;
 }
+.trend h4 { margin: 0 0 4px; font-size: 14px; color: var(--primary); }
+.trend p { margin: 0; font-size: 13px; color: var(--ink); }
 
-/* ---- Responsive ---- */
-@media (max-width: 720px) {
-  .kpi-strip { grid-template-columns: repeat(2, 1fr); }
-  .toc ol { columns: 1; }
-  .bar-row { grid-template-columns: 110px 1fr 60px; }
+/* ---- Ticket browser ---- */
+.filter-bar {
+  display: flex; gap: 12px; margin-bottom: 16px; flex-wrap: wrap; align-items: center;
 }
+.filter-bar input, .filter-bar select {
+  padding: 8px 12px; border: 1px solid var(--border); border-radius: 6px;
+  font-size: 13px; font-family: inherit; min-width: 200px;
+}
+.filter-bar label { font-size: 12px; color: var(--muted); }
+.browser-table { max-height: 70vh; overflow-y: auto; border-radius: 8px;
+  border: 1px solid var(--border); }
+.browser-table table { font-size: 12.5px; }
+.browser-table th { position: sticky; top: 0; z-index: 2; }
 """
 
 
-def render_html(df: pd.DataFrame, period_label: str) -> str:
-    n_real = len(df)
-    n_users = df["requester.email"].nunique()
-    avg_sent = df["sentiment_score"].mean()
-    themes = theme_rows(df)
-    services = service_rows(df, k=5)
-    n_categories = themes["category"].nunique()
+# ---- HTML body shell ----
 
-    # ---- Section 1: Executive Summary ------------------------------------
-    top_theme = themes.iloc[0]
-    most_painful = themes.sort_values("avg_sent").iloc[0]
-    top_service = services.iloc[0]
-    top_categories = (
-        themes.groupby("category")["tickets"].sum().sort_values(ascending=False)
-    )
-    exec_summary = f"""
-<section id="exec" class="tab-content active">
-  <h2>1 · Executive Summary</h2>
-  <p>Between {df['created_at'].min():%d %B} and {df['created_at'].max():%d %B} 2026,
-  AccessRP received <strong>{n_real:,} real customer complaints</strong> from
-  <strong>{n_users:,} unique users</strong> (after filtering out automation,
-  delivery-failure, and submission-confirmation tickets). Average customer
-  sentiment was <strong>{avg_sent:.1f}/100</strong>.</p>
+def render_html(data: dict) -> str:
+    pc = data["pain_categories"]
+    top_cat = pc[data["top_cat_key"]]
+    top_svc_name, top_svc_n = (data["top_services"][0] if data["top_services"] else ("—", 0))
+    top_svc_pct = top_svc_n / data["total"] * 100 if data["total"] else 0
 
-  <p>Tickets clustered into <strong>{n_categories} high-level issue categories</strong>,
-  with the largest share belonging to
-  <strong>{E(top_categories.index[0])}</strong> ({top_categories.iloc[0]:,} tickets)
-  and <strong>{E(top_categories.index[1])}</strong> ({top_categories.iloc[1]:,}).</p>
+    json_data = json.dumps(data, ensure_ascii=False, default=str)
 
-  <h3>Three findings stakeholders should act on</h3>
-  <ol>
-    <li><strong>Volume:</strong> <em>{E(top_theme['theme'])}</em> is the
-        most-reported issue ({top_theme['tickets']:,} tickets, {top_theme['users']:,} users
-        affected). Top services involved: {E(', '.join(top_theme['top_services']))}.</li>
-    <li><strong>Severity:</strong> <em>{E(most_painful['theme'])}</em> drives
-        the angriest tickets in the period (avg sentiment
-        {most_painful['avg_sent']:.0f}). It is concentrated in
-        {E(', '.join(most_painful['top_services']))}.</li>
-    <li><strong>Service hotspot:</strong> <em>{E(top_service['service'])}</em>
-        accounts for {top_service['tickets']:,} of the {n_real:,} tickets
-        ({top_service['tickets']/n_real*100:.0f}% of total) — any improvement
-        here has the largest immediate volume impact.</li>
-  </ol>
-  <p class="muted">Methodology, ticket-ID conventions, and PII handling are
-  noted in the footer.</p>
-</section>
-"""
-
-    # ---- Section 2: Key Pain Points --------------------------------------
-    pain_html = ['<section id="pain" class="tab-content"><h2>2 · Key Pain Points</h2>',
-                 '<p>Pain points are user-experienced frictions, blockers, '
-                 'and gaps surfaced across tickets. Each item below '
-                 'is backed by example ticket IDs and verbatim user text '
-                 '(with PII redacted) for verification.</p>']
-    for _, t in themes.head(8).iterrows():
-        rec = RECOMMENDATIONS.get(t["theme"], ("", "", ""))
-        quotes = pick_quotes(df[df["themes_list"].apply(
-            lambda lst, tt=t["theme"]: tt in (lst or []))], t["theme"], k=2)
-        pain_html.append(f"""
-<div class="pain">
-  <div class="title">{E(t['theme'])}</div>
-  <div class="stats">{t['tickets']:,} tickets · {t['users']:,} users · avg sentiment {t['avg_sent']:.0f}
-   · category: {E(t['category'])}</div>
-  <p>{E(rec[1]) if rec[1] else 'Recurring pattern across multiple services.'}</p>
-  <div>{ticket_chips(t['sample_ids'])}</div>
-  {quote_block(quotes)}
-</div>""")
-    pain_html.append('</section>')
-
-    # ---- Section 3: Issue Categories Breakdown --------------------------
-    cat_summary = (
-        themes.groupby("category")
-        .agg(tickets=("tickets", "sum"),
-             themes=("theme", lambda s: ", ".join(s)),
-             sample_ids=("sample_ids", lambda s: [i for sub in s for i in sub][:5]))
-        .sort_values("tickets", ascending=False)
-        .reset_index()
-    )
-    cat_total = cat_summary["tickets"].sum()
-    cat_rows = "\n".join([
-        f"""<tr>
-  <td><strong>{E(r['category'])}</strong></td>
-  <td class="num">{r['tickets']:,}</td>
-  <td class="num">{r['tickets']/cat_total*100:.1f}%</td>
-  <td>{E(r['themes'])}</td>
-  <td>{ticket_chips(r['sample_ids'])}</td>
-</tr>"""
-        for _, r in cat_summary.iterrows()
-    ])
-    cat_html = f"""
-<section id="categories" class="tab-content">
-  <h2>3 · Issue Categories Breakdown</h2>
-  <p>Themes have been grouped into eight high-level categories. Percentages
-  are computed against the themed-ticket total (one ticket can match
-  multiple themes, so totals exceed the per-ticket count).</p>
-  <table>
-    <thead>
-      <tr><th>Category</th><th>Tickets</th><th>%</th><th>Themes</th>
-          <th>Sample Ticket IDs</th></tr>
-    </thead>
-    <tbody>
-      {cat_rows}
-    </tbody>
-  </table>
-</section>
-"""
-
-    # ---- Section 4: Repeated Issues & Patterns ---------------------------
-    pattern_html = ['<section id="repeated" class="tab-content"><h2>4 · Repeated Issues & Patterns</h2>',
-                    '<p>Below are the most frequently recurring patterns '
-                    'extracted from the dataset, each with example ticket '
-                    'IDs and the root cause where it can be inferred.</p>']
-    repeated = themes.head(6)
-    for _, t in repeated.iterrows():
-        pattern_html.append(f"""
-<h4>{E(t['theme'])} — {t['tickets']:,} tickets</h4>
-<p>{E(RECOMMENDATIONS.get(t['theme'], ('', 'Multiple users reported this pattern across the period.', ''))[1])}</p>
-<div class="muted" style="font-size:0.85rem;margin-bottom:0.3rem;">
-  Top services: {E(', '.join(t['top_services']) or '—')}
-</div>
-<div>{ticket_chips(t['sample_ids'])}</div>""")
-    pattern_html.append('</section>')
-
-    # ---- Section 5: Top 10 Critical Issues -------------------------------
-    # Critical = high volume OR low sentiment OR both. Score = tickets * (100 - sent)
-    themes_critical = themes.copy()
-    themes_critical["score"] = themes_critical.apply(
-        lambda r: r["tickets"] * (100 - (r["avg_sent"] if pd.notna(r["avg_sent"]) else 50)),
-        axis=1
-    )
-    themes_critical = themes_critical.sort_values("score", ascending=False).head(10).reset_index(drop=True)
-    crit_html = ['<section id="critical" class="tab-content"><h2>5 · Top 10 Critical Issues</h2>',
-                 '<p>Ranked by <code>tickets × (100 − avg sentiment)</code> — '
-                 'high-volume or low-sentiment items rise to the top. '
-                 'A high rank here implies either a wide-blast-radius issue '
-                 'or a concentrated source of frustration (often both).</p>']
-    for i, t in themes_critical.iterrows():
-        why = []
-        if t["tickets"] >= 100:
-            why.append(f"high volume ({t['tickets']:,} tickets)")
-        if pd.notna(t["avg_sent"]) and t["avg_sent"] < 35:
-            why.append(f"low sentiment ({t['avg_sent']:.0f}/100)")
-        if t["users"] >= 100:
-            why.append(f"affects {t['users']:,}+ unique users")
-        why_str = "; ".join(why) or "recurring multi-service pattern"
-        crit_html.append(f"""
-<div class="critical">
-  <div class="rank">{i+1}</div>
-  <div class="body">
-    <div class="title">{E(t['theme'])} <span class="badge medium">{E(t['category'])}</span></div>
-    <div class="why"><strong>Why critical:</strong> {why_str}.</div>
-    <div class="stats">{t['tickets']:,} tickets · {t['users']:,} users
-      · avg sentiment {t['avg_sent']:.0f} · top services:
-      {E(', '.join(t['top_services']) or '—')}
-    </div>
-    <div style="margin-top:0.5rem">{ticket_chips(t['sample_ids'])}</div>
-  </div>
-</div>""")
-    crit_html.append('</section>')
-
-    # ---- Section 6: Top 5 Services Analysis ------------------------------
-    svc_html = ['<section id="services" class="tab-content"><h2>6 · Top 5 Services Analysis</h2>',
-                '<p>The five services that received the largest share of '
-                'real complaints in the period. For each, the dominant '
-                'issue patterns and example ticket IDs are listed.</p>']
-    for _, s in services.iterrows():
-        themes_list = "".join(
-            f'<li><strong>{E(t)}</strong> — {c:,} tickets</li>'
-            for t, c in s["top_themes"]
-        )
-        svc_html.append(f"""
-<h3>{E(s['service'])} — {s['tickets']:,} tickets · {s['users']:,} users</h3>
-<p>Average sentiment {s['avg_sent']:.0f}/100. Most-reported issue patterns
-within this service:</p>
-<ul>{themes_list}</ul>
-<div>Example tickets: {ticket_chips(s['sample_ids'])}</div>""")
-    svc_html.append('</section>')
-
-    # ---- Section 7: Service Distribution ---------------------------------
-    svc_dist = df["custom_fields.cf_service"].dropna().value_counts().head(12)
-    max_v = int(svc_dist.iloc[0])
-    bars = "\n".join(bar_row(svc, int(c), max_v) for svc, c in svc_dist.items())
-    dist_html = f"""
-<section id="distribution" class="tab-content">
-  <h2>7 · Service Distribution</h2>
-  <p>Ticket count by service (top 12). The first three services account for
-  a disproportionate share of the workload — they're the targets that yield
-  the largest deflection wins.</p>
-  {bars}
-</section>
-"""
-
-    # ---- Section 8: Strategic Recommendations ----------------------------
-    rec_html = ['<section id="recs" class="tab-content"><h2>8 · Strategic Recommendations</h2>',
-                '<p>Recommendations are ordered by the priority of the theme '
-                'they address. Each links back to the pain point and ticket IDs '
-                'in earlier sections.</p>']
-    seen_themes = set()
-    for _, t in themes_critical.iterrows():
-        if t["theme"] in seen_themes:
-            continue
-        seen_themes.add(t["theme"])
-        rec = RECOMMENDATIONS.get(t["theme"])
-        if not rec:
-            continue
-        title, body, priority = rec
-        klass = priority.lower().replace("/", "")
-        rec_html.append(f"""
-<div class="rec">
-  <div class="head"><span class="badge {klass}">{E(priority)} priority</span>
-    <span class="title">{E(title)}</span></div>
-  <div class="why">{E(body)}</div>
-  <div class="muted" style="font-size:0.85rem;">Addresses:
-    <em>{E(t['theme'])}</em> · {t['tickets']:,} tickets · {t['users']:,} users
-    · sample: {ticket_chips(t['sample_ids'][:3])}
-  </div>
-</div>""")
-    rec_html.append('</section>')
-
-    # ---- KPI strip + header + TOC ----------------------------------------
-    kpis = f"""
-<div class="kpi-strip">
-  <div class="kpi"><div class="label">Real complaints reviewed</div>
-    <div class="value">{n_real:,}</div>
-    <div class="sub">noise & automation filtered out</div></div>
-  <div class="kpi"><div class="label">Unique users affected</div>
-    <div class="value">{n_users:,}</div>
-    <div class="sub">distinct requester emails</div></div>
-  <div class="kpi"><div class="label">Distinct issue themes</div>
-    <div class="value">{len(themes)}</div>
-    <div class="sub">grouped into {n_categories} categories</div></div>
-  <div class="kpi"><div class="label">Avg sentiment (0–100)</div>
-    <div class="value">{avg_sent:.1f}</div>
-    <div class="sub">Freshdesk score, higher = happier</div></div>
-</div>
-"""
-
-    tabs = """
-<nav class="tabs">
-  <div class="container">
-    <button class="tab-btn active" data-tab="exec">Executive Summary</button>
-    <button class="tab-btn" data-tab="pain">Key Pain Points</button>
-    <button class="tab-btn" data-tab="categories">Issue Categories</button>
-    <button class="tab-btn" data-tab="repeated">Repeated Issues</button>
-    <button class="tab-btn" data-tab="critical">Top 10 Critical</button>
-    <button class="tab-btn" data-tab="services">Top 5 Services</button>
-    <button class="tab-btn" data-tab="distribution">Service Distribution</button>
-    <button class="tab-btn" data-tab="recs">Recommendations</button>
-  </div>
-</nav>
-"""
-
-    footer = f"""
-<div class="report-footer">
-  <p><strong>Methodology.</strong> Source data: AccessRP Freshdesk export
-  for the period covered. Tickets in the
-  &ldquo;Ads Test Tickets and Auto-Emails&rdquo; service and tickets matching
-  auto-reply / delivery-failure / submission-confirmation patterns are
-  excluded from this analysis. Themes are derived via a rule-based classifier
-  applied to subject and description text.</p>
-
-  <p><strong>Ticket IDs.</strong> Numeric IDs are Freshdesk's internal
-  ticket numbers and are meaningless without access to the helpdesk.</p>
-
-  <p><strong>PII handling.</strong> Verbatim quotes have been redacted:
-  email addresses, phone numbers, EID-style identifiers, application
-  reference numbers, unit numbers, licence numbers, passport numbers, and
-  URLs are replaced with bracketed placeholders. Customer names that appear
-  inside the prose body are <em>not</em> automatically masked &mdash; review
-  before publishing if your dataset contains names embedded in
-  free-text descriptions.</p>
-
-  <p class="muted" style="margin-top:1.2rem;">
-    Generated on {pd.Timestamp.now():%Y-%m-%d %H:%M} ·
-    Source repo:
-    <a href="https://github.com/ymedhatadres/accessrp-dashboard"
-       style="color: var(--navy);">ymedhatadres/accessrp-dashboard</a>
-  </p>
-</div>
-"""
-
-    title_html = f"""
-<header class="report-header">
-  <h1>AccessRP &mdash; User Feedback Insights</h1>
-  <div class="meta">{E(period_label)} · ADGM real-estate services portal
-  · {n_real:,} complaints reviewed</div>
-</header>
-"""
-
-    body = "\n".join([
-        title_html, kpis, tabs,
-        exec_summary,
-        "\n".join(pain_html),
-        cat_html,
-        "\n".join(pattern_html),
-        "\n".join(crit_html),
-        "\n".join(svc_html),
-        dist_html,
-        "\n".join(rec_html),
-        footer,
-    ])
+    title = f"AccessRP — User Feedback Insights ({html.escape(data['period'])})"
 
     return f"""<!doctype html>
 <html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>AccessRP — User Feedback Insights ({E(period_label)})</title>
+  <title>{title}</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
   <style>{CSS}</style>
 </head>
 <body>
-  <div class="wrap">
-    {body}
+
+<header class="hero">
+  <div class="container">
+    <div class="label">User Feedback Insights · ADGM AccessRP</div>
+    <h1>AccessRP — what users are telling us</h1>
+    <div class="subtitle">A rigorous review of {data['total']:,} real customer complaints
+    over {html.escape(data['period'])}, surfacing the pain points,
+    operational issues, and recurring patterns that should drive the
+    next round of product fixes.</div>
+    <div class="meta">Prepared for ADRES product, operations and support
+    leadership. PII in embedded quotes is redacted.</div>
+
+    <div class="kpi-grid">
+      <div class="kpi-card">
+        <div class="label">Tickets Reviewed</div>
+        <div class="value">{data['total']:,}</div>
+        <div class="delta">Real complaints in {html.escape(data['period'])}</div>
+      </div>
+      <div class="kpi-card">
+        <div class="label">Unique Users Affected</div>
+        <div class="value">{data['n_users']:,}</div>
+        <div class="delta">Distinct requester emails</div>
+      </div>
+      <div class="kpi-card">
+        <div class="label">Distinct Issue Themes</div>
+        <div class="value">{len(data['all_issues'])}</div>
+        <div class="delta">Grouped into 5 pain categories</div>
+      </div>
+      <div class="kpi-card">
+        <div class="label">Top Pain Category</div>
+        <div class="value">{data['top_cat_share']:.1f}%</div>
+        <div class="delta">{html.escape(top_cat['title'])}</div>
+      </div>
+      <div class="kpi-card">
+        <div class="label">Most Affected Service</div>
+        <div class="value">{html.escape(top_svc_name)}</div>
+        <div class="delta">{top_svc_n:,} tickets ({top_svc_pct:.0f}% of total)</div>
+      </div>
+    </div>
   </div>
-  <script>
-    (function () {{
-      var btns = document.querySelectorAll('.tab-btn');
-      var panels = document.querySelectorAll('.tab-content');
-      function show(id) {{
-        btns.forEach(function (b) {{
-          b.classList.toggle('active', b.dataset.tab === id);
-        }});
-        panels.forEach(function (p) {{
-          p.classList.toggle('active', p.id === id);
-        }});
-        // Scroll the activated tab button into view (mobile)
-        var active = document.querySelector('.tab-btn.active');
-        if (active && active.scrollIntoView) {{
-          active.scrollIntoView({{ block: 'nearest', inline: 'nearest', behavior: 'smooth' }});
-        }}
-        // Scroll page to top of section
-        window.scrollTo({{ top: 0, behavior: 'smooth' }});
-      }}
-      btns.forEach(function (b) {{
-        b.addEventListener('click', function () {{
-          var id = b.dataset.tab;
-          show(id);
-          history.replaceState(null, '', '#' + id);
-        }});
-      }});
-      // Open the tab named in the URL hash on first load, if any.
-      var hash = location.hash.replace('#', '');
-      if (hash && document.getElementById(hash)) {{
-        show(hash);
-      }}
-    }})();
-  </script>
+</header>
+
+<nav class="tabs">
+  <div class="container">
+    <button class="tab-btn active" data-tab="exec">Executive Summary</button>
+    <button class="tab-btn" data-tab="topissues">Top Issues</button>
+    <button class="tab-btn" data-tab="services">Most Affected Services</button>
+    <button class="tab-btn" data-tab="distribution">Issue Distribution</button>
+    <button class="tab-btn" data-tab="painpoints">Recurring Pain Points</button>
+    <button class="tab-btn" data-tab="operational">Operational Issues</button>
+    <button class="tab-btn" data-tab="trends">Key Trends</button>
+    <button class="tab-btn" data-tab="recommendations">Recommendations</button>
+    <button class="tab-btn" data-tab="browser">Ticket Browser</button>
+  </div>
+</nav>
+
+<div class="container">
+
+  <section id="exec" class="tab-content active">
+    <h2>1. Executive Summary</h2>
+    <p class="section-sub">A snapshot of the AccessRP helpdesk picture for
+    {html.escape(data['period'])}: where users are getting stuck, which
+    services are taking the heaviest hit, and what the highest-impact moves
+    look like.</p>
+    <div class="grid-2">
+      <div class="card">
+        <h3>How users are getting stuck</h3>
+        <div class="chart-container"><canvas id="painChart"></canvas></div>
+      </div>
+      <div class="card">
+        <h3>Top 5 services by ticket volume</h3>
+        <div class="chart-container"><canvas id="topSvcChart"></canvas></div>
+      </div>
+    </div>
+    <div class="card" style="margin-top:18px;">
+      <h3>The five things leadership should know</h3>
+      <ol style="margin: 8px 0; padding-left: 22px; line-height: 1.9;" id="execBullets"></ol>
+    </div>
+  </section>
+
+  <section id="topissues" class="tab-content">
+    <h2>2. Top Issues Affecting Users</h2>
+    <p class="section-sub">The 10 most frequent user-facing problems, ranked
+    by volume. Each card explains what is happening, the pain category it
+    belongs to, and provides example ticket IDs and a redacted user quote for
+    verification.</p>
+    <div id="topIssuesContainer"></div>
+  </section>
+
+  <section id="services" class="tab-content">
+    <h2>3. Most Affected Services</h2>
+    <p class="section-sub">The five AccessRP services receiving the heaviest
+    support load, with the specific issues driving each.</p>
+    <div id="topServicesContainer"></div>
+  </section>
+
+  <section id="distribution" class="tab-content">
+    <h2>4. Issue Distribution Across Services</h2>
+    <p class="section-sub">How user problems spread across different AccessRP
+    services, with the share each pain category takes inside each service.</p>
+    <div class="grid-2">
+      <div class="card">
+        <h3>Tickets per service</h3>
+        <div class="chart-container tall"><canvas id="svcDistChart"></canvas></div>
+      </div>
+      <div class="card">
+        <h3>Pain category mix per service</h3>
+        <div class="chart-container tall"><canvas id="svcCatChart"></canvas></div>
+      </div>
+    </div>
+    <div class="card" style="margin-top:18px;">
+      <h3>Full breakdown</h3>
+      <div id="svcCatTable"></div>
+    </div>
+  </section>
+
+  <section id="painpoints" class="tab-content">
+    <h2>5. Recurring User Pain Points</h2>
+    <p class="section-sub">The five recurring patterns that explain why users
+    are frustrated. Each card includes the underlying behaviour, why it is
+    happening, what would fix it, and example ticket IDs.</p>
+    <div id="painCardsContainer"></div>
+  </section>
+
+  <section id="operational" class="tab-content">
+    <h2>6. Critical Operational Issues</h2>
+    <p class="section-sub">Issues that are not user pain points per se, but
+    distort operational metrics and create avoidable workload for the support
+    team. Reducing these makes the rest of the dashboard more honest.</p>
+    <div id="operationalContainer"></div>
+  </section>
+
+  <section id="trends" class="tab-content">
+    <h2>7. Key Trends &amp; Observations</h2>
+    <p class="section-sub">High-level patterns worth surfacing to leadership
+    in addition to the headline metrics.</p>
+    <div id="trendsContainer"></div>
+  </section>
+
+  <section id="recommendations" class="tab-content">
+    <h2>8. Recommendations &amp; Opportunities</h2>
+    <p class="section-sub">Prioritised actions linked to the underlying pain
+    points, with addressable-ticket counts as a rough sizing.</p>
+    <div id="recommendationsContainer"></div>
+  </section>
+
+  <section id="browser" class="tab-content">
+    <h2>9. Ticket Browser</h2>
+    <p class="section-sub">Search and filter the full set of {data['total']:,}
+    tickets. Useful for verifying any finding or pulling representative
+    examples for a stakeholder discussion. Quotes are redacted.</p>
+    <div class="filter-bar">
+      <div>
+        <label>Search</label><br>
+        <input type="text" id="browserSearch" placeholder="search subject, body, theme...">
+      </div>
+      <div>
+        <label>Pain Category</label><br>
+        <select id="browserCat">
+          <option value="">All categories</option>
+        </select>
+      </div>
+      <div>
+        <label>Service</label><br>
+        <select id="browserSvc">
+          <option value="">All services</option>
+        </select>
+      </div>
+      <div>
+        <span id="browserCount" style="font-weight:600;color: var(--primary);"></span>
+      </div>
+    </div>
+    <div class="browser-table">
+      <table>
+        <thead><tr>
+          <th style="width: 70px;">ID</th>
+          <th style="width: 140px;">Service</th>
+          <th style="width: 150px;">Issue</th>
+          <th style="width: 150px;">Pain Category</th>
+          <th>Subject / Quote (redacted)</th>
+        </tr></thead>
+        <tbody id="browserBody"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <p style="color: var(--muted); font-size: 12px; margin-top: 40px;
+            padding-top: 18px; border-top: 1px solid var(--border);">
+    <strong>Methodology.</strong> Source data: AccessRP Freshdesk export for the
+    period covered. Tickets in the &ldquo;Ads Test Tickets and Auto-Emails&rdquo;
+    service and tickets matching auto-reply / delivery-failure /
+    submission-confirmation patterns are excluded.
+    Themes are detected via a bilingual rule-based classifier (English + Arabic
+    keywords). Quotes are PII-redacted (emails, phones, EIDs, application
+    reference numbers, unit / licence / passport numbers, URLs).
+    Generated {pd.Timestamp.now():%Y-%m-%d}. Source:
+    <a href="https://github.com/ymedhatadres/accessrp-dashboard"
+       style="color: var(--primary);">accessrp-dashboard</a>.
+  </p>
+</div>
+
+<script>
+const DATA = {json_data};
+{RENDERER_JS}
+</script>
 </body>
 </html>"""
+
+
+RENDERER_JS = r"""
+// ---- Tab nav ----
+document.querySelectorAll('.tab-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const id = btn.dataset.tab;
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.toggle('active', b === btn));
+    document.querySelectorAll('.tab-content').forEach(s => s.classList.toggle('active', s.id === id));
+    history.replaceState(null, '', '#' + id);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  });
+});
+if (location.hash) {
+  const h = location.hash.replace('#','');
+  const btn = document.querySelector(`.tab-btn[data-tab="${h}"]`);
+  if (btn) btn.click();
+}
+
+const catKeys = Object.keys(DATA.pain_categories);
+const catColor = k => DATA.pain_categories[k].color;
+const catTitle = k => DATA.pain_categories[k].title;
+
+// ---- Exec: doughnut ----
+new Chart(document.getElementById('painChart'), {
+  type: 'doughnut',
+  data: {
+    labels: catKeys.map(catTitle),
+    datasets: [{
+      data: catKeys.map(k => DATA.cat_counts[k] || 0),
+      backgroundColor: catKeys.map(catColor),
+      borderWidth: 2, borderColor: '#fff',
+    }],
+  },
+  options: {
+    responsive: true, maintainAspectRatio: false,
+    plugins: {
+      legend: { position: 'right', labels: { font: { size: 12 }, boxWidth: 14, padding: 10 } },
+      tooltip: { callbacks: { label: ctx => {
+        const pct = (ctx.parsed / DATA.total * 100).toFixed(1);
+        return `${ctx.label}: ${ctx.parsed} tickets (${pct}%)`;
+      } } }
+    }
+  }
+});
+
+// ---- Exec: top 5 services bar ----
+new Chart(document.getElementById('topSvcChart'), {
+  type: 'bar',
+  data: {
+    labels: DATA.top_services.map(s => s[0]),
+    datasets: [{ label: 'Tickets', data: DATA.top_services.map(s => s[1]), backgroundColor: '#0F2D3D' }],
+  },
+  options: {
+    indexAxis: 'y', responsive: true, maintainAspectRatio: false,
+    plugins: { legend: { display: false } },
+    scales: { x: { beginAtZero: true } },
+  }
+});
+
+// ---- Exec bullets ----
+(function () {
+  const ol = document.getElementById('execBullets');
+  const sortedCats = catKeys.slice().sort((a,b) => (DATA.cat_counts[b]||0) - (DATA.cat_counts[a]||0));
+  const top1 = sortedCats[0], top2 = sortedCats[1];
+  const top1Cfg = DATA.pain_categories[top1];
+  const topIssue = DATA.top_user_issues[0];
+  const topSvc = DATA.top_services[0];
+  const bullets = [
+    `<strong>${top1Cfg.title} is the largest pain category.</strong> ${DATA.cat_counts[top1]} tickets (${(DATA.cat_counts[top1]/DATA.total*100).toFixed(0)}% of total). ${top1Cfg.subtitle}`,
+    `<strong>The single most-reported issue is "${topIssue.name}"</strong> with ${topIssue.count} tickets (${topIssue.pct.toFixed(1)}%). ${topIssue.description}`,
+    `<strong>${topSvc[0]} carries ${topSvc[1]} tickets</strong> — ${(topSvc[1]/DATA.total*100).toFixed(0)}% of all complaints flow through this one service. Improvements here have the highest immediate volume impact.`,
+    `<strong>${DATA.pain_categories[top2].title} comes second.</strong> ${DATA.cat_counts[top2]} tickets. ${DATA.pain_categories[top2].subtitle}`,
+    `<strong>Self-service gaps are the biggest deflection opportunity.</strong> ${DATA.cat_counts.self_service||0} tickets are users asking the helpdesk to perform an action a self-serve UI could perform.`,
+  ];
+  bullets.forEach(b => { const li = document.createElement('li'); li.innerHTML = b; ol.appendChild(li); });
+})();
+
+// ---- Top issues cards ----
+(function () {
+  const el = document.getElementById('topIssuesContainer');
+  DATA.top_user_issues.forEach((issue, i) => {
+    const cat = DATA.pain_categories[issue.category];
+    const div = document.createElement('div');
+    div.className = 'issue-card';
+    div.innerHTML = `
+      <div class="rank-circle" style="background: ${cat.color}22; color: ${cat.color};">${i+1}</div>
+      <div class="issue-body">
+        <div class="issue-meta">
+          <span class="pill cat-${issue.category}">${cat.title}</span>
+          <strong>${issue.count} tickets</strong>
+          <span style="color: var(--muted);">(${issue.pct.toFixed(1)}% of all)</span>
+        </div>
+        <h4 class="issue-name">${issue.name}</h4>
+        <div class="issue-desc">${issue.description}</div>
+        ${issue.sample_quote ? `<div class="quote">"${issue.sample_quote}" <br/><span class="ticket-id">— Ticket ${issue.sample_quote_id}</span></div>` : ''}
+        <div class="issue-evidence">Sample tickets: ${issue.samples.map(id => '#'+id).join(', ')}</div>
+      </div>
+    `;
+    el.appendChild(div);
+  });
+})();
+
+// ---- Top services cards ----
+(function () {
+  const el = document.getElementById('topServicesContainer');
+  Object.entries(DATA.top_service_issues).forEach(([svc, info]) => {
+    const div = document.createElement('div');
+    div.className = 'card';
+    div.style.marginBottom = '14px';
+    const rows = info.top_issues.map(iss => {
+      const cat = DATA.pain_categories[iss.category];
+      return `
+        <div style="padding: 10px 0; border-bottom: 1px dashed var(--border);">
+          <div style="display:flex;gap:10px;align-items:center;margin-bottom:4px;flex-wrap:wrap;">
+            <span class="pill cat-${iss.category}">${cat.title}</span>
+            <strong>${iss.name}</strong>
+            <span style="color: var(--muted);">${iss.count} tickets</span>
+          </div>
+          ${iss.sample_quote ? `<div class="quote">"${iss.sample_quote}" <br/><span class="ticket-id">— Ticket ${iss.sample_quote_id}</span></div>` : ''}
+        </div>
+      `;
+    }).join('');
+    div.innerHTML = `
+      <h3>${svc} <span style="color: var(--muted); font-weight:400; font-size: 14px;">— ${info.total} tickets · ${info.users} users · avg sentiment ${info.avg_sentiment ?? '—'}</span></h3>
+      ${rows}
+      <div class="issue-evidence" style="margin-top: 10px;">Sample tickets: ${info.samples.map(id => '#'+id).join(', ')}</div>
+    `;
+    el.appendChild(div);
+  });
+})();
+
+// ---- Distribution: tickets per service ----
+new Chart(document.getElementById('svcDistChart'), {
+  type: 'bar',
+  data: {
+    labels: DATA.all_services.map(s => s[0]),
+    datasets: [{ data: DATA.all_services.map(s => s[1]), backgroundColor: '#0F2D3D' }],
+  },
+  options: {
+    indexAxis: 'y', responsive: true, maintainAspectRatio: false,
+    plugins: { legend: { display: false } },
+    scales: { x: { beginAtZero: true } },
+  }
+});
+
+// ---- Distribution: pain category mix per service (stacked) ----
+new Chart(document.getElementById('svcCatChart'), {
+  type: 'bar',
+  data: {
+    labels: DATA.service_category_table.map(r => r.service),
+    datasets: catKeys.map(k => ({
+      label: DATA.pain_categories[k].title,
+      data: DATA.service_category_table.map(r => r.breakdown[k] || 0),
+      backgroundColor: DATA.pain_categories[k].color,
+    })),
+  },
+  options: {
+    indexAxis: 'y', responsive: true, maintainAspectRatio: false,
+    scales: { x: { stacked: true, beginAtZero: true }, y: { stacked: true } },
+    plugins: { legend: { position: 'bottom', labels: { boxWidth: 12, font: { size: 11 } } } },
+  }
+});
+
+// ---- Distribution table ----
+(function () {
+  const el = document.getElementById('svcCatTable');
+  let html = '<table><thead><tr><th>Service</th><th class="num">Total</th>';
+  catKeys.forEach(k => html += `<th class="num">${DATA.pain_categories[k].title}</th>`);
+  html += '</tr></thead><tbody>';
+  DATA.service_category_table.forEach(r => {
+    html += `<tr><td><strong>${r.service}</strong></td><td class="num">${r.total}</td>`;
+    catKeys.forEach(k => html += `<td class="num">${r.breakdown[k] || 0}</td>`);
+    html += '</tr>';
+  });
+  html += '</tbody></table>';
+  el.innerHTML = html;
+})();
+
+// ---- Pain point cards ----
+(function () {
+  const el = document.getElementById('painCardsContainer');
+  DATA.pain_points.forEach(p => {
+    const div = document.createElement('div');
+    div.className = 'pain-card';
+    div.style.background = p.bg;
+    div.style.borderColor = p.color + '55';
+    div.style.color = '#222';
+    div.innerHTML = `
+      <div class="pain-head">
+        <h3 class="pain-title" style="color: ${p.color};">${p.title}</h3>
+        <div class="pain-stat" style="color: ${p.color};">${p.count} tickets · ${p.pct.toFixed(1)}%</div>
+      </div>
+      <p class="pain-sub">${p.subtitle}</p>
+      <h4>What is happening</h4><p>${p.why}</p>
+      <h4>What would fix it</h4><p>${p.fix}</p>
+      ${p.sample_quote ? `<div class="quote">"${p.sample_quote}" <br/><span class="ticket-id">— Ticket ${p.sample_quote_id}</span></div>` : ''}
+      <div class="pain-evidence">Sample tickets: ${p.samples.map(id => '#'+id).join(', ')}</div>
+    `;
+    el.appendChild(div);
+  });
+})();
+
+// ---- Operational issues ----
+(function () {
+  const el = document.getElementById('operationalContainer');
+  DATA.operational_issues.forEach(o => {
+    const div = document.createElement('div');
+    div.className = 'card';
+    div.style.marginBottom = '12px';
+    div.innerHTML = `
+      <h3>${o.name} <span style="color: var(--muted); font-weight:400; font-size: 13px;">— ${o.count} tickets</span></h3>
+      <p>${o.description}</p>
+      <div class="issue-evidence">Sample tickets: ${o.samples.map(id => '#'+id).join(', ')}</div>
+    `;
+    el.appendChild(div);
+  });
+})();
+
+// ---- Trends ----
+(function () {
+  const el = document.getElementById('trendsContainer');
+  DATA.trends.forEach(t => {
+    const div = document.createElement('div');
+    div.className = 'trend';
+    div.innerHTML = `<h4>${t.title}</h4><p>${t.detail}</p>`;
+    el.appendChild(div);
+  });
+})();
+
+// ---- Recommendations ----
+(function () {
+  const el = document.getElementById('recommendationsContainer');
+  DATA.recommendations.forEach(r => {
+    const cat = DATA.pain_categories[r.category_key];
+    const div = document.createElement('div');
+    div.className = 'rec';
+    div.innerHTML = `
+      <div class="rec-head">
+        <span class="pill priority-${r.priority.toLowerCase()}">${r.priority} priority</span>
+        <span class="pill cat-${r.category_key}">${cat ? cat.title : ''}</span>
+        <span class="rec-title">${r.title}</span>
+        <span class="rec-impact">${r.impact_text}</span>
+      </div>
+      <p>${r.rationale}</p>
+    `;
+    el.appendChild(div);
+  });
+})();
+
+// ---- Ticket browser ----
+(function () {
+  const cats = new Set(DATA.tickets.map(t => t.category));
+  const svcs = new Set(DATA.tickets.map(t => t.s));
+  const catSel = document.getElementById('browserCat');
+  const svcSel = document.getElementById('browserSvc');
+  [...cats].sort().forEach(c => { const o = document.createElement('option'); o.value = c; o.text = c; catSel.appendChild(o); });
+  [...svcs].sort().forEach(s => { const o = document.createElement('option'); o.value = s; o.text = s; svcSel.appendChild(o); });
+
+  const body = document.getElementById('browserBody');
+  const count = document.getElementById('browserCount');
+  const search = document.getElementById('browserSearch');
+  function render() {
+    const q = (search.value || '').toLowerCase();
+    const c = catSel.value, s = svcSel.value;
+    const rows = DATA.tickets.filter(t => {
+      if (c && t.category !== c) return false;
+      if (s && t.s !== s) return false;
+      if (q) {
+        const hay = (t.sub + ' ' + t.q + ' ' + t.issue).toLowerCase();
+        if (!hay.includes(q)) return false;
+      }
+      return true;
+    });
+    count.textContent = `${rows.length.toLocaleString()} of ${DATA.tickets.length.toLocaleString()} tickets`;
+    body.innerHTML = rows.slice(0, 500).map(t => `
+      <tr>
+        <td class="ticket-id">#${t.id}</td>
+        <td>${t.s}</td>
+        <td>${t.issue}</td>
+        <td><span class="pill cat-${t.category_key}">${t.category}</span></td>
+        <td><div style="font-weight:600;">${t.sub}</div><div style="color: var(--muted); font-style:italic; margin-top: 4px;">${t.q}</div></td>
+      </tr>
+    `).join('');
+  }
+  search.addEventListener('input', render);
+  catSel.addEventListener('change', render);
+  svcSel.addEventListener('change', render);
+  render();
+})();
+"""
+
+
+# ----------------------------------------------------------------------------
+# Main
+# ----------------------------------------------------------------------------
 
 
 def main() -> int:
@@ -921,9 +1349,11 @@ def main() -> int:
     df, period = load_period(args.quarter, args.all)
     print(f"Building report for: {period}  ({len(df):,} real complaints)")
 
+    data = build_data(df, period)
+    html_str = render_html(data)
+
     OUT_HTML.parent.mkdir(parents=True, exist_ok=True)
-    html_str = render_html(df, period)
-    OUT_HTML.write_text(html_str)
+    OUT_HTML.write_text(html_str, encoding="utf-8")
     print(f"Wrote {OUT_HTML}  ({OUT_HTML.stat().st_size / 1024:.0f} KB)")
     return 0
 

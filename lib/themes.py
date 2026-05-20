@@ -31,43 +31,72 @@ _NOISE_RE = re.compile("|".join(NOISE_SUBJECT_PATTERNS), re.IGNORECASE)
 
 # Theme rules: (theme_name, list of regex patterns). Order matters — first
 # match wins for `theme_primary`. Patterns run against subject + description.
+#
+# Each theme has both English and Arabic keyword alternatives so Arabic
+# tickets bucket by content (Payment, Lease, etc.) rather than being
+# lumped into a separate "Arabic-language" bucket.
 THEME_RULES: list[tuple[str, list[str]]] = [
     ("Login / Access",
      [r"\b(?:login|log\s?in|sign\s?in|access denied|cannot access|can'?t access|"
-      r"otp|password|account locked|2fa)\b"]),
+      r"otp|password|account locked|2fa)\b",
+      r"(?:تسجيل\s*الدخول|كلمة\s*(?:المرور|السر)|رمز\s*التحقق|"
+      r"لا\s*أستطيع\s*الدخول|لا\s*يمكنني\s*تسجيل)"]),
     ("Payment / Wallet",
      [r"\b(?:payment|wallet|top[- ]?up|refund|charge|charged|transaction failed|"
-      r"deduct|invoice|fees?)\b"]),
+      r"deduct|invoice|fees?)\b",
+      r"(?:الدفع|دفع|سداد|مبلغ|خصم|مدفوع|استرداد|محفظة|الرسوم|رسوم|"
+      r"فاتورة|تم\s*الخصم|لم\s*يتم\s*الدفع)"]),
     ("Application stuck / pending",
      [r"\b(?:stuck|pending|not moving|no update|status not|awaiting|waiting for|"
-      r"under review)\b"]),
+      r"under review)\b",
+      r"(?:معلق|قيد\s*المراجعة|قيد\s*الانتظار|لم\s*يتم\s*تحديث|"
+      r"لا\s*يزال|تأخير|بانتظار|في\s*الانتظار)"]),
     ("Application not found / missing",
-     [r"\b(?:not found|missing|cannot find|can'?t find|disappeared|where is)\b"]),
+     [r"\b(?:not found|missing|cannot find|can'?t find|disappeared|where is)\b",
+      r"(?:غير\s*موجود|لا\s*يظهر|مفقود|لم\s*أجد|لا\s*أستطيع\s*العثور|"
+      r"اين\s*طلبي|أين\s*هو)"]),
     ("Rejection / declined",
-     [r"\b(?:rejected|declined|denied|refused|disapproved)\b"]),
+     [r"\b(?:rejected|declined|denied|refused|disapproved)\b",
+      r"(?:مرفوض|تم\s*رفض|رفض\s*الطلب|تم\s*الرفض)"]),
     ("Cancellation request",
-     [r"\b(?:cancel|cancellation|withdraw|withdrawal)\b"]),
+     [r"\b(?:cancel|cancellation|withdraw|withdrawal)\b",
+      r"(?:إلغاء|الغاء|سحب\s*الطلب|الغاء\s*الطلب|إلغاء\s*الطلب)"]),
     ("Data correction / update",
      [r"\b(?:update|correction|wrong|incorrect|mistake|typo|change my|"
-      r"need to change|amend)\b"]),
+      r"need to change|amend)\b",
+      r"(?:تحديث|تعديل|تصحيح|تغيير|خطأ\s*في\s*المعلومات|معلومات\s*خاطئة|"
+      r"تحديث\s*البيانات|تعديل\s*البيانات)"]),
     ("Document / attachment issue",
      [r"\b(?:document|attachment|upload|file size|file format|pdf|signed|"
-      r"signature|noc)\b"]),
+      r"signature|noc)\b",
+      r"(?:مستند|وثيقة|مرفق|تحميل|رفع|توقيع|ملف)"]),
     ("Certificate",
-     [r"\b(?:certificate|certif|noc letter|good standing)\b"]),
+     [r"\b(?:certificate|certif|noc letter|good standing)\b",
+      r"(?:شهادة|شهادات|عدم\s*ممانعة|شهادة\s*عدم\s*ممانعة)"]),
     ("Lease / tenancy",
-     [r"\b(?:lease|tenancy|tenant|landlord|rental|ejari)\b"]),
+     [r"\b(?:lease|tenancy|tenant|landlord|rental|ejari)\b",
+      r"(?:عقد\s*إيجار|إيجار|ايجار|مستأجر|مؤجر|ايجاري|توثيق|تاوتيق)"]),
     ("Transfer / POA",
-     [r"\b(?:transfer|poa|power of attorney|assignment)\b"]),
+     [r"\b(?:transfer|poa|power of attorney|assignment)\b",
+      r"(?:تحويل|نقل\s*الملكية|وكالة|تفويض|توكيل)"]),
     ("Appointment / booking",
-     [r"\b(?:appointment|booking|reschedule|book a slot)\b"]),
+     [r"\b(?:appointment|booking|reschedule|book a slot)\b",
+      r"(?:موعد|حجز|إعادة\s*جدولة|تحديد\s*موعد|حجز\s*موعد)"]),
     ("Error / system issue",
      [r"\b(?:error|failed|failure|broken|bug|crash|cannot submit|"
-      r"can'?t submit|something went wrong)\b"]),
+      r"can'?t submit|something went wrong)\b",
+      r"(?:خطأ|فشل|حدث\s*خطأ|لا\s*يعمل|مشكلة\s*في\s*النظام|"
+      r"النظام\s*لا|عطل|توقف\s*النظام)"]),
     ("Slow / performance",
-     [r"\b(?:slow|takes too long|loading|spinning|timeout|timed out)\b"]),
-    ("Arabic-language ticket",
-     [r"[؀-ۿ]"]),
+     [r"\b(?:slow|takes too long|loading|spinning|timeout|timed out)\b",
+      r"(?:بطيء|انتظار\s*طويل|توقف|تحميل\s*بطيء)"]),
+    ("Information request",
+     [r"\b(?:please advise|please clarify|kindly explain|how do i|how can i|"
+      r"could you (?:advise|clarify|confirm)|need (?:guidance|clarification|info)|"
+      r"request for information)\b",
+      r"(?:طلب\s*معلومات|الرجاء\s*التوضيح|يرجى\s*التوضيح|"
+      r"يرجى\s*الإفادة|الرجاء\s*الإفادة|نرجو\s*التوضيح|أرجو\s*التوضيح|"
+      r"للاستفسار|استفسار)"]),
 ]
 
 _THEME_COMPILED = [
