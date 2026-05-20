@@ -225,12 +225,16 @@ def load_period(quarter: str | None, all_data: bool) -> tuple[pd.DataFrame, str]
     return sub, period
 
 
-def ticket_category(row: pd.Series) -> str:
-    """Map a ticket to its primary pain category via its first theme match."""
+def ticket_category(row: pd.Series) -> str | None:
+    """Map a ticket to its primary pain category via its first theme match.
+
+    Returns None for un-themed tickets so they don't inflate any of the
+    five pain categories.
+    """
     for t in (row["themes_list"] or []):
         if t in THEME_TO_CATEGORY:
             return THEME_TO_CATEGORY[t]
-    return "helpdesk_noise"  # default bucket for un-themed tickets
+    return None
 
 
 def pick_quote(sub: pd.DataFrame, theme: str | None) -> tuple[str | None, int | None]:
@@ -261,13 +265,16 @@ def build_data(df: pd.DataFrame, period_label: str) -> dict:
     total = len(df)
     n_users = int(df["requester.email"].nunique())
 
-    # ---- pain category counts ----
-    cat_counts = df["category"].value_counts().to_dict()
-    for k in PAIN_CATEGORIES:
-        cat_counts.setdefault(k, 0)
+    # ---- pain category counts (un-themed tickets excluded) ----
+    themed_df = df[df["category"].notna()]
+    cat_counts_raw = themed_df["category"].value_counts().to_dict()
+    cat_counts = {k: int(cat_counts_raw.get(k, 0)) for k in PAIN_CATEGORIES}
+    n_themed = int(themed_df.shape[0])
+    n_unthemed = total - n_themed
 
     top_cat_key = max(cat_counts, key=lambda k: cat_counts[k])
     top_cat_share = cat_counts[top_cat_key] / total * 100 if total else 0
+    op_noise_share = cat_counts["helpdesk_noise"] / total * 100 if total else 0
 
     # ---- top 10 user-facing issues = top 10 themes by ticket count ----
     theme_to_tickets: dict[str, list[int]] = {}
@@ -515,11 +522,14 @@ def build_data(df: pd.DataFrame, period_label: str) -> dict:
     return {
         "total": total,
         "n_users": n_users,
+        "n_themed": n_themed,
+        "n_unthemed": n_unthemed,
         "period": period_label,
         "pain_categories": PAIN_CATEGORIES,
         "cat_counts": cat_counts,
         "top_cat_key": top_cat_key,
         "top_cat_share": round(top_cat_share, 1),
+        "op_noise_share": round(op_noise_share, 1),
         "top_user_issues": top_user_issues,
         "all_issues": all_issues,
         "top_services": top_services,
@@ -838,35 +848,35 @@ def render_html(data: dict) -> str:
 
 <header class="hero">
   <div class="container">
-    <div class="label">User Feedback Insights · ADGM AccessRP</div>
-    <h1>AccessRP — what users are telling us</h1>
-    <div class="subtitle">A rigorous review of {data['total']:,} real customer complaints
-    over {html.escape(data['period'])}, surfacing the pain points,
-    operational issues, and recurring patterns that should drive the
-    next round of product fixes.</div>
-    <div class="meta">Prepared for ADRES product, operations and support
-    leadership. PII in embedded quotes is redacted.</div>
+    <div class="label">User Feedback Insights</div>
+    <h1>AccessRP Helpdesk Insights — {html.escape(data['period'])}</h1>
+    <div class="subtitle">A stakeholder-friendly view of what is
+    frustrating AccessRP users, which services need the most attention,
+    and where the highest-impact improvements lie.</div>
+    <div class="meta">Prepared for: Leadership &amp; Operations Teams
+    &nbsp;•&nbsp; ADRES UX Analytics &nbsp;•&nbsp;
+    {pd.Timestamp.now():%-d %B %Y}</div>
 
     <div class="kpi-grid">
       <div class="kpi-card">
         <div class="label">Tickets Reviewed</div>
         <div class="value">{data['total']:,}</div>
-        <div class="delta">Real complaints in {html.escape(data['period'])}</div>
+        <div class="delta">{html.escape(data['period'])} helpdesk volume</div>
       </div>
       <div class="kpi-card">
-        <div class="label">Unique Users Affected</div>
-        <div class="value">{data['n_users']:,}</div>
-        <div class="delta">Distinct requester emails</div>
-      </div>
-      <div class="kpi-card">
-        <div class="label">Distinct Issue Themes</div>
+        <div class="label">Distinct Issue Types</div>
         <div class="value">{len(data['all_issues'])}</div>
-        <div class="delta">Grouped into 5 pain categories</div>
+        <div class="delta">Recurring user problems identified</div>
       </div>
       <div class="kpi-card">
-        <div class="label">Top Pain Category</div>
+        <div class="label">Top Pain Point</div>
         <div class="value">{data['top_cat_share']:.1f}%</div>
         <div class="delta">{html.escape(top_cat['title'])}</div>
+      </div>
+      <div class="kpi-card">
+        <div class="label">Operational Noise</div>
+        <div class="value">{data['op_noise_share']:.1f}%</div>
+        <div class="delta">Template emails &amp; routing artefacts</div>
       </div>
       <div class="kpi-card">
         <div class="label">Most Affected Service</div>
