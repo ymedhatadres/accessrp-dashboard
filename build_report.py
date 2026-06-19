@@ -5,8 +5,9 @@ Structure mirrors the Dari reference (Rahaf Sh.) — 5-card hero KPI strip,
 AccessRP content underneath, PII redacted in embedded quotes.
 
 Usage:
-    python3 build_report.py                       # latest quarter (April 2026)
-    python3 build_report.py --quarter "2026 Q1"
+    python3 build_report.py                       # latest month (auto)
+    python3 build_report.py --month 2026-05       # specific month
+    python3 build_report.py --quarter "2026 Q1"   # full quarter
     python3 build_report.py --all
 """
 
@@ -208,21 +209,32 @@ THEME_KEYWORDS = {
 # ----------------------------------------------------------------------------
 
 
-def load_period(quarter: str | None, all_data: bool) -> tuple[pd.DataFrame, str]:
+def load_period(month: str | None, quarter: str | None,
+                all_data: bool) -> tuple[pd.DataFrame, str]:
     df = pd.read_parquet(PARQUET)
     df = classify(df)
     df = df.loc[~df["is_noise"]].reset_index(drop=True)
 
     if all_data:
         return df, f"{df['created_at'].min():%b %Y} – {df['created_at'].max():%b %Y}"
+    if month:
+        sub = df[df["created_month"] == month].reset_index(drop=True)
+        if sub.empty:
+            avail = sorted(df["created_month"].dropna().unique().tolist())
+            raise SystemExit(
+                f"No tickets in month '{month}'. Available: {avail}")
+        label = f"{pd.to_datetime(month).strftime('%B %Y')}"
+        return sub, label
     if quarter:
         sub = df[df["quarter"] == quarter].reset_index(drop=True)
         return sub, quarter
-    latest = sorted(df["quarter"].dropna().unique())[-1]
-    sub = df[df["quarter"] == latest].reset_index(drop=True)
-    period = ("April 2026" if latest == "2026 Q2"
-              else f"{sub['created_at'].min():%b %Y} – {sub['created_at'].max():%b %Y}")
-    return sub, period
+    # Default: most recent month that has more than a trivial amount of data.
+    counts = df["created_month"].value_counts().sort_index()
+    real_months = counts[counts >= 50].index.tolist()
+    latest = real_months[-1] if real_months else counts.index[-1]
+    sub = df[df["created_month"] == latest].reset_index(drop=True)
+    label = pd.to_datetime(latest).strftime("%B %Y")
+    return sub, label
 
 
 def ticket_category(row: pd.Series) -> str | None:
@@ -1352,11 +1364,12 @@ new Chart(document.getElementById('svcCatChart'), {
 
 def main() -> int:
     parser = argparse.ArgumentParser()
+    parser.add_argument("--month", help="e.g. '2026-05' (preferred)")
     parser.add_argument("--quarter", help="e.g. '2026 Q1', '2026 Q2'")
     parser.add_argument("--all", action="store_true", help="use the full dataset")
     args = parser.parse_args()
 
-    df, period = load_period(args.quarter, args.all)
+    df, period = load_period(args.month, args.quarter, args.all)
     print(f"Building report for: {period}  ({len(df):,} real complaints)")
 
     data = build_data(df, period)

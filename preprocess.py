@@ -13,6 +13,7 @@ import pandas as pd
 SOURCE_FILES = [
     Path("/Users/yahya/Downloads/QTR1_ADGM/tickets_full_export_MERGED.xlsx"),
     Path("/Users/yahya/Downloads/Qtr2/Apr_2026.xlsx"),
+    Path("/Users/yahya/Downloads/May_FreshDesk_Export/ADGM/tickets_full_export_MERGED.xlsx"),
 ]
 OUT_PARQUET = Path(__file__).parent / "data" / "tickets.parquet"
 SHEET = "tickets"

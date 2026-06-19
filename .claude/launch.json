@@ -12,6 +12,18 @@
         "--browser.gatherUsageStats=false"
       ],
       "port": 8501
+    },
+    {
+      "name": "dev-portal-preview",
+      "runtimeExecutable": "python3",
+      "runtimeArgs": [
+        "-m",
+        "http.server",
+        "8770",
+        "--directory",
+        "/private/tmp/claude-501/-Users-yahya-Claude-Code-ADRES-Claude-Code/a2747dc7-b7a6-4228-b05d-179fc8f58228/scratchpad"
+      ],
+      "port": 8770
     }
   ]
 }

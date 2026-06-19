@@ -29,10 +29,35 @@ def render_sidebar_filters(df: pd.DataFrame) -> pd.DataFrame:
         else []
     )
 
-    # Date-range bounds narrow to the selected quarter(s) if any picked.
-    bounds_df = (
+    # Month filter is the recommended way to scope a report by period.
+    # Options narrow to the selected quarter(s) if any are picked.
+    months_source = (
         df[df["quarter"].astype(str).isin(quarters)] if quarters else df
     )
+    months_avail = (
+        _sorted_unique(months_source["created_month"])
+        if "created_month" in df.columns
+        else []
+    )
+    months = (
+        st.sidebar.multiselect(
+            "Month",
+            options=months_avail,
+            default=[],
+            help="Empty = all months in the quarter selection. "
+                 "Pick a single month to view only that month's tickets.",
+        )
+        if months_avail
+        else []
+    )
+
+    # Date-range bounds narrow to the selected month(s), or quarter(s).
+    if months:
+        bounds_df = df[df["created_month"].astype(str).isin(months)]
+    elif quarters:
+        bounds_df = df[df["quarter"].astype(str).isin(quarters)]
+    else:
+        bounds_df = df
     min_d = bounds_df["created_at"].min().date()
     max_d = bounds_df["created_at"].max().date()
     date_range = st.sidebar.date_input(
@@ -73,6 +98,8 @@ def render_sidebar_filters(df: pd.DataFrame) -> pd.DataFrame:
     mask = (df["created_at"] >= start_ts) & (df["created_at"] < end_ts)
     if quarters:
         mask &= df["quarter"].astype(str).isin(quarters)
+    if months:
+        mask &= df["created_month"].astype(str).isin(months)
     if services:
         mask &= df[SERVICE_COL].astype(str).isin(services)
     if statuses:
