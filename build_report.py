@@ -209,12 +209,15 @@ THEME_KEYWORDS = {
 # ----------------------------------------------------------------------------
 
 
-def load_period(month: str | None, quarter: str | None,
-                all_data: bool) -> tuple[pd.DataFrame, str]:
+def load_full() -> pd.DataFrame:
     df = pd.read_parquet(PARQUET)
     df = classify(df)
-    df = df.loc[~df["is_noise"]].reset_index(drop=True)
+    return df.loc[~df["is_noise"]].reset_index(drop=True)
 
+
+def load_period(month: str | None, quarter: str | None,
+                all_data: bool) -> tuple[pd.DataFrame, str]:
+    df = load_full()
     if all_data:
         return df, f"{df['created_at'].min():%b %Y} – {df['created_at'].max():%b %Y}"
     if month:
@@ -235,6 +238,36 @@ def load_period(month: str | None, quarter: str | None,
     sub = df[df["created_month"] == latest].reset_index(drop=True)
     label = pd.to_datetime(latest).strftime("%B %Y")
     return sub, label
+
+
+def build_all_months(min_size: int = 50) -> tuple[dict, list[tuple[str, str]], str]:
+    """Build one DATA block per month + an 'all' block.
+
+    Returns (all_data_dict, options_list, default_month_key).
+    options_list is [(key, label), ...] ordered with the most recent month first
+    and 'all' last — suitable for the <select> dropdown directly.
+    """
+    df = load_full()
+    counts = df["created_month"].value_counts().sort_index()
+    months = [m for m in counts.index if counts[m] >= min_size]
+
+    all_data: dict[str, dict] = {}
+    options: list[tuple[str, str]] = []
+
+    for m in reversed(months):  # latest first
+        sub = df[df["created_month"] == m].reset_index(drop=True)
+        label = pd.to_datetime(m).strftime("%B %Y")
+        all_data[m] = build_data(sub, label)
+        options.append((m, label))
+
+    # "All" view
+    all_label = (f"All months ({df['created_at'].min():%b %Y} – "
+                 f"{df['created_at'].max():%b %Y})")
+    all_data["all"] = build_data(df, all_label)
+    options.append(("all", all_label))
+
+    default_key = options[0][0]  # latest month
+    return all_data, options, default_key
 
 
 def ticket_category(row: pd.Series) -> str | None:
@@ -663,6 +696,29 @@ header.hero .meta { font-size: 13px; opacity: 0.75; }
 .kpi-card .value { font-size: 32px; font-weight: 700; line-height: 1.1; }
 .kpi-card .delta { font-size: 12px; opacity: 0.8; margin-top: 6px; }
 
+/* ---- Month picker (in hero) ---- */
+.month-picker {
+  display: inline-flex; align-items: center; gap: 10px;
+  margin-top: 18px;
+  background: rgba(255,255,255,0.10);
+  border: 1px solid rgba(255,255,255,0.18);
+  border-radius: 8px; padding: 8px 14px;
+}
+.month-picker label {
+  font-size: 12px; opacity: 0.85; font-weight: 600;
+  text-transform: uppercase; letter-spacing: 0.5px;
+}
+.month-picker select {
+  background: white; color: var(--primary);
+  border: 1px solid rgba(255,255,255,0.4); border-radius: 6px;
+  padding: 6px 28px 6px 12px; font-size: 14px; font-weight: 600;
+  cursor: pointer; font-family: inherit;
+  appearance: none; -webkit-appearance: none;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'><path fill='%230F2D3D' d='M2 4 L6 8 L10 4 Z'/></svg>");
+  background-repeat: no-repeat; background-position: right 8px center;
+}
+.month-picker select:focus { outline: 2px solid var(--gold); outline-offset: 2px; }
+
 /* ---- Tab bar ---- */
 nav.tabs {
   background: white; border-bottom: 1px solid var(--border);
@@ -837,15 +893,14 @@ td.num { text-align: right; font-variant-numeric: tabular-nums; }
 
 # ---- HTML body shell ----
 
-def render_html(data: dict) -> str:
-    pc = data["pain_categories"]
-    top_cat = pc[data["top_cat_key"]]
-    top_svc_name, top_svc_n = (data["top_services"][0] if data["top_services"] else ("—", 0))
-    top_svc_pct = top_svc_n / data["total"] * 100 if data["total"] else 0
-
-    json_data = json.dumps(data, ensure_ascii=False, default=str)
-
-    title = f"AccessRP — User Feedback Insights ({html.escape(data['period'])})"
+def render_html(all_data: dict, options: list[tuple[str, str]],
+                default_key: str) -> str:
+    json_all = json.dumps(all_data, ensure_ascii=False, default=str)
+    options_html = "\n".join(
+        f'<option value="{html.escape(k)}">{html.escape(label)}</option>'
+        for k, label in options
+    )
+    title = "AccessRP — User Feedback Insights"
 
     return f"""<!doctype html>
 <html lang="en">
@@ -861,7 +916,7 @@ def render_html(data: dict) -> str:
 <header class="hero">
   <div class="container">
     <div class="label">User Feedback Insights</div>
-    <h1>AccessRP Helpdesk Insights — {html.escape(data['period'])}</h1>
+    <h1 id="reportTitle">AccessRP Helpdesk Insights</h1>
     <div class="subtitle">A stakeholder-friendly view of what is
     frustrating AccessRP users, which services need the most attention,
     and where the highest-impact improvements lie.</div>
@@ -869,31 +924,36 @@ def render_html(data: dict) -> str:
     &nbsp;•&nbsp; ADRES UX Analytics &nbsp;•&nbsp;
     {pd.Timestamp.now():%-d %B %Y}</div>
 
+    <div class="month-picker">
+      <label for="monthPicker">Reporting period</label>
+      <select id="monthPicker">{options_html}</select>
+    </div>
+
     <div class="kpi-grid">
       <div class="kpi-card">
         <div class="label">Tickets Reviewed</div>
-        <div class="value">{data['total']:,}</div>
-        <div class="delta">{html.escape(data['period'])} helpdesk volume</div>
+        <div class="value" id="kpi-total">—</div>
+        <div class="delta" id="kpi-total-delta">—</div>
       </div>
       <div class="kpi-card">
         <div class="label">Distinct Issue Types</div>
-        <div class="value">{len(data['all_issues'])}</div>
+        <div class="value" id="kpi-types">—</div>
         <div class="delta">Recurring user problems identified</div>
       </div>
       <div class="kpi-card">
         <div class="label">Top Pain Point</div>
-        <div class="value">{data['top_cat_share']:.1f}%</div>
-        <div class="delta">{html.escape(top_cat['title'])}</div>
+        <div class="value" id="kpi-top-cat-pct">—</div>
+        <div class="delta" id="kpi-top-cat-name">—</div>
       </div>
       <div class="kpi-card">
         <div class="label">Operational Noise</div>
-        <div class="value">{data['op_noise_share']:.1f}%</div>
+        <div class="value" id="kpi-noise-pct">—</div>
         <div class="delta">Template emails &amp; routing artefacts</div>
       </div>
       <div class="kpi-card">
         <div class="label">Most Affected Service</div>
-        <div class="value">{html.escape(top_svc_name)}</div>
-        <div class="delta">{top_svc_n:,} tickets ({top_svc_pct:.0f}% of total)</div>
+        <div class="value" id="kpi-svc-name">—</div>
+        <div class="delta" id="kpi-svc-delta">—</div>
       </div>
     </div>
   </div>
@@ -917,10 +977,9 @@ def render_html(data: dict) -> str:
 
   <section id="exec" class="tab-content active">
     <h2>1. Executive Summary</h2>
-    <p class="section-sub">A snapshot of the AccessRP helpdesk picture for
-    {html.escape(data['period'])}: where users are getting stuck, which
-    services are taking the heaviest hit, and what the highest-impact moves
-    look like.</p>
+    <p class="section-sub" id="execSub">A snapshot of the AccessRP helpdesk
+    picture: where users are getting stuck, which services are taking the
+    heaviest hit, and what the highest-impact moves look like.</p>
     <div class="grid-2">
       <div class="card">
         <h3>How users are getting stuck</h3>
@@ -1005,9 +1064,10 @@ def render_html(data: dict) -> str:
 
   <section id="browser" class="tab-content">
     <h2>9. Ticket Browser</h2>
-    <p class="section-sub">Search and filter the full set of {data['total']:,}
-    tickets. Useful for verifying any finding or pulling representative
-    examples for a stakeholder discussion. Quotes are redacted.</p>
+    <p class="section-sub" id="browserSub">Search and filter the tickets for
+    the selected reporting period. Useful for verifying any finding or pulling
+    representative examples for a stakeholder discussion. Quotes are
+    redacted.</p>
     <div class="filter-bar">
       <div>
         <label>Search</label><br>
@@ -1059,7 +1119,8 @@ def render_html(data: dict) -> str:
 </div>
 
 <script>
-const DATA = {json_data};
+const ALL_DATA = {json_all};
+const DEFAULT_MONTH = "{html.escape(default_key)}";
 {RENDERER_JS}
 </script>
 </body>
@@ -1067,28 +1128,95 @@ const DATA = {json_data};
 
 
 RENDERER_JS = r"""
-// ---- Tab nav ----
+// ---- Tab nav (static, doesn't depend on month) ----
 document.querySelectorAll('.tab-btn').forEach(btn => {
   btn.addEventListener('click', () => {
     const id = btn.dataset.tab;
     document.querySelectorAll('.tab-btn').forEach(b => b.classList.toggle('active', b === btn));
     document.querySelectorAll('.tab-content').forEach(s => s.classList.toggle('active', s.id === id));
-    history.replaceState(null, '', '#' + id);
+    setHash('#' + id);
     window.scrollTo({ top: 0, behavior: 'smooth' });
   });
 });
-if (location.hash) {
-  const h = location.hash.replace('#','');
-  const btn = document.querySelector(`.tab-btn[data-tab="${h}"]`);
-  if (btn) btn.click();
+
+let DATA = null;
+const charts = {};
+
+function destroyCharts() {
+  for (const k of Object.keys(charts)) {
+    try { charts[k] && charts[k].destroy(); } catch(e) {}
+    delete charts[k];
+  }
+}
+function clearAllDynamic() {
+  ['execBullets','topIssuesContainer','topServicesContainer','svcCatTable',
+   'painCardsContainer','operationalContainer','trendsContainer',
+   'recommendationsContainer','browserBody'].forEach(id => {
+     const el = document.getElementById(id);
+     if (el) el.innerHTML = '';
+  });
+  // Reset browser dropdowns to their default-only options
+  const catSel = document.getElementById('browserCat');
+  const svcSel = document.getElementById('browserSvc');
+  if (catSel) catSel.innerHTML = '<option value="">All categories</option>';
+  if (svcSel) svcSel.innerHTML = '<option value="">All services</option>';
 }
 
-const catKeys = Object.keys(DATA.pain_categories);
-const catColor = k => DATA.pain_categories[k].color;
-const catTitle = k => DATA.pain_categories[k].title;
+function setHash(h) {
+  const u = new URL(location.href);
+  u.hash = h.startsWith('#') ? h.substring(1) : h;
+  history.replaceState(null, '', u.toString());
+}
+function setMonthParam(m) {
+  const u = new URL(location.href);
+  u.searchParams.set('m', m);
+  history.replaceState(null, '', u.toString());
+}
+
+function renderHero() {
+  const pc = DATA.pain_categories;
+  const topCat = pc[DATA.top_cat_key];
+  const topSvcName = (DATA.top_services[0] || ['—', 0])[0];
+  const topSvcN = (DATA.top_services[0] || ['—', 0])[1];
+  const topSvcPct = DATA.total ? (topSvcN / DATA.total * 100) : 0;
+
+  document.getElementById('reportTitle').textContent =
+    'AccessRP Helpdesk Insights — ' + DATA.period;
+  document.title = 'AccessRP — User Feedback Insights (' + DATA.period + ')';
+
+  document.getElementById('kpi-total').textContent = DATA.total.toLocaleString();
+  document.getElementById('kpi-total-delta').textContent =
+    DATA.period + ' helpdesk volume';
+  document.getElementById('kpi-types').textContent = DATA.all_issues.length;
+  document.getElementById('kpi-top-cat-pct').textContent =
+    DATA.top_cat_share.toFixed(1) + '%';
+  document.getElementById('kpi-top-cat-name').textContent = topCat.title;
+  document.getElementById('kpi-noise-pct').textContent =
+    DATA.op_noise_share.toFixed(1) + '%';
+  document.getElementById('kpi-svc-name').textContent = topSvcName;
+  document.getElementById('kpi-svc-delta').textContent =
+    topSvcN.toLocaleString() + ' tickets (' + topSvcPct.toFixed(0) + '% of total)';
+
+  document.getElementById('execSub').textContent =
+    'A snapshot of the AccessRP helpdesk picture for ' + DATA.period +
+    ': where users are getting stuck, which services are taking the heaviest hit, and what the highest-impact moves look like.';
+  document.getElementById('browserSub').textContent =
+    'Search and filter the ' + DATA.total.toLocaleString() +
+    ' tickets in ' + DATA.period + '. Useful for verifying any finding or pulling representative examples. Quotes are redacted.';
+}
+
+function renderAll(monthKey) {
+  DATA = ALL_DATA[monthKey];
+  destroyCharts();
+  clearAllDynamic();
+  renderHero();
+
+  const catKeys = Object.keys(DATA.pain_categories);
+  const catColor = k => DATA.pain_categories[k].color;
+  const catTitle = k => DATA.pain_categories[k].title;
 
 // ---- Exec: doughnut ----
-new Chart(document.getElementById('painChart'), {
+charts.pain = new Chart(document.getElementById('painChart'), {
   type: 'doughnut',
   data: {
     labels: catKeys.map(catTitle),
@@ -1111,7 +1239,7 @@ new Chart(document.getElementById('painChart'), {
 });
 
 // ---- Exec: top 5 services bar ----
-new Chart(document.getElementById('topSvcChart'), {
+charts.topSvc = new Chart(document.getElementById('topSvcChart'), {
   type: 'bar',
   data: {
     labels: DATA.top_services.map(s => s[0]),
@@ -1125,7 +1253,7 @@ new Chart(document.getElementById('topSvcChart'), {
 });
 
 // ---- Exec bullets ----
-(function () {
+{
   const ol = document.getElementById('execBullets');
   const sortedCats = catKeys.slice().sort((a,b) => (DATA.cat_counts[b]||0) - (DATA.cat_counts[a]||0));
   const top1 = sortedCats[0], top2 = sortedCats[1];
@@ -1140,10 +1268,10 @@ new Chart(document.getElementById('topSvcChart'), {
     `<strong>Self-service gaps are the biggest deflection opportunity.</strong> ${DATA.cat_counts.self_service||0} tickets are users asking the helpdesk to perform an action a self-serve UI could perform.`,
   ];
   bullets.forEach(b => { const li = document.createElement('li'); li.innerHTML = b; ol.appendChild(li); });
-})();
+}
 
 // ---- Top issues cards ----
-(function () {
+{
   const el = document.getElementById('topIssuesContainer');
   DATA.top_user_issues.forEach((issue, i) => {
     const cat = DATA.pain_categories[issue.category];
@@ -1165,10 +1293,10 @@ new Chart(document.getElementById('topSvcChart'), {
     `;
     el.appendChild(div);
   });
-})();
+}
 
 // ---- Top services cards ----
-(function () {
+{
   const el = document.getElementById('topServicesContainer');
   Object.entries(DATA.top_service_issues).forEach(([svc, info]) => {
     const div = document.createElement('div');
@@ -1194,10 +1322,10 @@ new Chart(document.getElementById('topSvcChart'), {
     `;
     el.appendChild(div);
   });
-})();
+}
 
 // ---- Distribution: tickets per service ----
-new Chart(document.getElementById('svcDistChart'), {
+charts.svcDist = new Chart(document.getElementById('svcDistChart'), {
   type: 'bar',
   data: {
     labels: DATA.all_services.map(s => s[0]),
@@ -1211,7 +1339,7 @@ new Chart(document.getElementById('svcDistChart'), {
 });
 
 // ---- Distribution: pain category mix per service (stacked) ----
-new Chart(document.getElementById('svcCatChart'), {
+charts.svcCat = new Chart(document.getElementById('svcCatChart'), {
   type: 'bar',
   data: {
     labels: DATA.service_category_table.map(r => r.service),
@@ -1229,7 +1357,7 @@ new Chart(document.getElementById('svcCatChart'), {
 });
 
 // ---- Distribution table ----
-(function () {
+{
   const el = document.getElementById('svcCatTable');
   let html = '<table><thead><tr><th>Service</th><th class="num">Total</th>';
   catKeys.forEach(k => html += `<th class="num">${DATA.pain_categories[k].title}</th>`);
@@ -1241,10 +1369,10 @@ new Chart(document.getElementById('svcCatChart'), {
   });
   html += '</tbody></table>';
   el.innerHTML = html;
-})();
+}
 
 // ---- Pain point cards ----
-(function () {
+{
   const el = document.getElementById('painCardsContainer');
   DATA.pain_points.forEach(p => {
     const div = document.createElement('div');
@@ -1265,10 +1393,10 @@ new Chart(document.getElementById('svcCatChart'), {
     `;
     el.appendChild(div);
   });
-})();
+}
 
 // ---- Operational issues ----
-(function () {
+{
   const el = document.getElementById('operationalContainer');
   DATA.operational_issues.forEach(o => {
     const div = document.createElement('div');
@@ -1281,10 +1409,10 @@ new Chart(document.getElementById('svcCatChart'), {
     `;
     el.appendChild(div);
   });
-})();
+}
 
 // ---- Trends ----
-(function () {
+{
   const el = document.getElementById('trendsContainer');
   DATA.trends.forEach(t => {
     const div = document.createElement('div');
@@ -1292,10 +1420,10 @@ new Chart(document.getElementById('svcCatChart'), {
     div.innerHTML = `<h4>${t.title}</h4><p>${t.detail}</p>`;
     el.appendChild(div);
   });
-})();
+}
 
 // ---- Recommendations ----
-(function () {
+{
   const el = document.getElementById('recommendationsContainer');
   DATA.recommendations.forEach(r => {
     const cat = DATA.pain_categories[r.category_key];
@@ -1312,10 +1440,10 @@ new Chart(document.getElementById('svcCatChart'), {
     `;
     el.appendChild(div);
   });
-})();
+}
 
 // ---- Ticket browser ----
-(function () {
+{
   const cats = new Set(DATA.tickets.map(t => t.category));
   const svcs = new Set(DATA.tickets.map(t => t.s));
   const catSel = document.getElementById('browserCat');
@@ -1326,7 +1454,7 @@ new Chart(document.getElementById('svcCatChart'), {
   const body = document.getElementById('browserBody');
   const count = document.getElementById('browserCount');
   const search = document.getElementById('browserSearch');
-  function render() {
+  function renderBrowser() {
     const q = (search.value || '').toLowerCase();
     const c = catSel.value, s = svcSel.value;
     const rows = DATA.tickets.filter(t => {
@@ -1349,11 +1477,43 @@ new Chart(document.getElementById('svcCatChart'), {
       </tr>
     `).join('');
   }
-  search.addEventListener('input', render);
-  catSel.addEventListener('change', render);
-  svcSel.addEventListener('change', render);
-  render();
-})();
+  // Avoid stacking listeners on every renderAll — clone the inputs.
+  const newSearch = search.cloneNode(true); search.parentNode.replaceChild(newSearch, search);
+  const newCatSel = catSel.cloneNode(false);
+  newCatSel.appendChild(document.createElement('option'));
+  newCatSel.firstChild.value = ''; newCatSel.firstChild.text = 'All categories';
+  [...cats].sort().forEach(c => { const o = document.createElement('option'); o.value = c; o.text = c; newCatSel.appendChild(o); });
+  catSel.parentNode.replaceChild(newCatSel, catSel);
+  const newSvcSel = svcSel.cloneNode(false);
+  newSvcSel.appendChild(document.createElement('option'));
+  newSvcSel.firstChild.value = ''; newSvcSel.firstChild.text = 'All services';
+  [...svcs].sort().forEach(s => { const o = document.createElement('option'); o.value = s; o.text = s; newSvcSel.appendChild(o); });
+  svcSel.parentNode.replaceChild(newSvcSel, svcSel);
+  newSearch.addEventListener('input', renderBrowser);
+  newCatSel.addEventListener('change', renderBrowser);
+  newSvcSel.addEventListener('change', renderBrowser);
+  renderBrowser();
+}
+}  // end renderAll
+
+// ---- Initial wiring ----
+{
+  const picker = document.getElementById('monthPicker');
+  const urlM = new URLSearchParams(location.search).get('m');
+  const initial = (urlM && ALL_DATA[urlM]) ? urlM : DEFAULT_MONTH;
+  picker.value = initial;
+  picker.addEventListener('change', e => {
+    renderAll(e.target.value);
+    setMonthParam(e.target.value);
+  });
+  renderAll(initial);
+  // Restore tab from URL hash, if any.
+  if (location.hash) {
+    const h = location.hash.replace('#','');
+    const btn = document.querySelector(`.tab-btn[data-tab="${h}"]`);
+    if (btn) btn.click();
+  }
+}
 """
 
 
@@ -1364,16 +1524,22 @@ new Chart(document.getElementById('svcCatChart'), {
 
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--month", help="e.g. '2026-05' (preferred)")
-    parser.add_argument("--quarter", help="e.g. '2026 Q1', '2026 Q2'")
-    parser.add_argument("--all", action="store_true", help="use the full dataset")
+    parser.add_argument("--month", help="default month to open the report on, e.g. '2026-05'")
     args = parser.parse_args()
 
-    df, period = load_period(args.month, args.quarter, args.all)
-    print(f"Building report for: {period}  ({len(df):,} real complaints)")
+    all_data, options, default_key = build_all_months()
+    if args.month:
+        if args.month not in all_data:
+            avail = [k for k, _ in options]
+            raise SystemExit(f"No data for month '{args.month}'. Available: {avail}")
+        default_key = args.month
 
-    data = build_data(df, period)
-    html_str = render_html(data)
+    months_with_data = [k for k, _ in options if k != "all"]
+    total_all = all_data["all"]["total"]
+    print(f"Embedding {len(months_with_data)} months + 'all' view "
+          f"(total {total_all:,} real complaints). Default tab: {default_key}.")
+
+    html_str = render_html(all_data, options, default_key)
 
     OUT_HTML.parent.mkdir(parents=True, exist_ok=True)
     OUT_HTML.write_text(html_str, encoding="utf-8")
